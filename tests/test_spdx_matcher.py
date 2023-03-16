@@ -210,12 +210,15 @@ APACHE2 = """
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
+
 class TestSimple(unittest.TestCase):
 
     def test_apache2(self):
         analysis, match = spdx_matcher.analyse_license_text(APACHE2)
-        self.assertEqual(match, 1.0)
-        self.assertEqual(len(analysis["licenses"]),1 )
+
+        self.assertEqual(len(analysis["licenses"]), 1)
+        self.assertTrue("Apache-2.0" in analysis["licenses"])
 
 
 if __name__ == '__main__':

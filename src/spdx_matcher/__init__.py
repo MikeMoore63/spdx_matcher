@@ -1,11 +1,13 @@
+import json
 import os
 import re
 import time
-import json
+import urllib.request
+from functools import cache
 from textwrap import wrap
-from functools import lru_cache, cache
 
-DEFAULT_CACHE_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)),"spdxCache.json")
+DEFAULT_CACHE_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)),
+                                  "spdxCache.json")
 
 URL_REGEX = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 COPYRIGHT_NOTICE_REGEX = r"((?<=\n)|.*)Copyright.*(?=\n|$)|Copyright.*\\n"
@@ -62,70 +64,70 @@ VARIETAL_WORDS_SPELLING = {
 LICENSE_HEADER_REMOVAL = 0x01
 COPYRIGHT_REMOVAL = 0x02
 APPENDIX_ADDENDUM_REMOVAL = 0x04
-REMOVE_ALL = LICENSE_HEADER_REMOVAL | COPYRIGHT_REMOVAL |  APPENDIX_ADDENDUM_REMOVAL
+REMOVE_ALL = LICENSE_HEADER_REMOVAL | COPYRIGHT_REMOVAL | APPENDIX_ADDENDUM_REMOVAL
 REMOVE_FINGERPRINT = LICENSE_HEADER_REMOVAL | COPYRIGHT_REMOVAL
 REMOVE_NONE = 0x0
 
 
-def normalize(licenseText, remove_sections=REMOVE_FINGERPRINT):
+def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     """Normalize the license text with all the SPDX license list matching guidelines.
 
     Arguments:
-        licenseText {string} -- licenseText is the license text of the license.
+        license_text {string} -- license_text is the license text of the license.
 
     Returns:
         string -- license text nomalized with all the SPDX matching guidelines.
     """
 
     # To avoid a possibility of a non-match due to urls not being same.
-    licenseText = re.sub(URL_REGEX, 'normalized/url', licenseText, flags=re.IGNORECASE)
+    license_text = re.sub(URL_REGEX, 'normalized/url', license_text, flags=re.IGNORECASE)
 
     # To avoid the license mismatch merely due to the existence or absence of code comment
     # indicators placed within the license text, they are just removed.
-    licenseText = re.sub(COMMENTS_REGEX, "", licenseText, flags=re.IGNORECASE)
+    license_text = re.sub(COMMENTS_REGEX, "", license_text, flags=re.IGNORECASE)
 
     # To avoid a license mismatch merely because extraneous text that appears at the end of the
     # terms of a license is different or missing.
     if remove_sections & APPENDIX_ADDENDUM_REMOVAL:
-        licenseText = re.sub(EXTRANEOUS_REGEX, "", licenseText, flags=re.IGNORECASE)
-        licenseText = re.sub(ADDENDIUM_EXHIBIT_REGEX, "", licenseText, flags=re.IGNORECASE)
+        license_text = re.sub(EXTRANEOUS_REGEX, "", license_text, flags=re.IGNORECASE)
+        license_text = re.sub(ADDENDIUM_EXHIBIT_REGEX, "", license_text, flags=re.IGNORECASE)
 
     # By using a default copyright symbol (c)", we can avoid the possibility of a mismatch.
     # normalise copyright
     # B.10 Copyright symbol
-    licenseText = re.sub(COPYRIGHT_SYMBOLS, "(C)", licenseText, flags=re.IGNORECASE)
+    license_text = re.sub(COPYRIGHT_SYMBOLS, "(C)", license_text, flags=re.IGNORECASE)
 
     # To avoid a license mismatch merely because the copyright notice is different, it is not
     # substantive and is removed.
     # B.11 Copyright notice removal for matching
     if remove_sections & COPYRIGHT_REMOVAL:
-        licenseText = re.sub(COPYRIGHT_NOTICE_REGEX, "", licenseText, flags=re.IGNORECASE)
+        license_text = re.sub(COPYRIGHT_NOTICE_REGEX, "", license_text, flags=re.IGNORECASE)
 
     # To avoid a possibility of a non-match due to case sensitivity.
-    licenseText = licenseText.lower()
+    license_text = license_text.lower()
 
     # B.6.3 Guideline: hyphens, dashes
-    licenseText = licenseText.replace("–", "-").replace("—", "-")
+    license_text = license_text.replace("–", "-").replace("—", "-")
 
     # To remove the license name or title present at the beginning of the license text.
-    if remove_sections & LICENSE_HEADER_REMOVAL and 'license' in licenseText.split('\n')[0]:
-        licenseText = '\n'.join(licenseText.split('\n')[1:])
+    if remove_sections & LICENSE_HEADER_REMOVAL and 'license' in license_text.split('\n')[0]:
+        license_text = '\n'.join(license_text.split('\n')[1:])
 
     # B.6.4 Guideline: Quotes
-    licenseText = licenseText.replace("\"", "'").replace("`", "'")
+    license_text = license_text.replace("\"", "'").replace("`", "'")
 
     # To avoid the possibility of a non-match due to variations of bullets, numbers, letter,
     # or no bullets used are simply removed.
-    licenseText = re.sub(BULLETS_NUMBERING_REGEX, " ", licenseText)
+    license_text = re.sub(BULLETS_NUMBERING_REGEX, " ", license_text)
 
     # To avoid the possibility of a non-match due to the same word being spelled differently.
     for initial, final in list(VARIETAL_WORDS_SPELLING.items()):
-        licenseText = licenseText.replace(initial, final)
+        license_text = license_text.replace(initial, final)
 
     # To avoid the possibility of a non-match due to different spacing of words, line breaks,
     # or paragraphs.
-    licenseText = re.sub(r" +", " ", " ".join(licenseText.split()))
-    return licenseText
+    license_text = re.sub(r" +", " ", " ".join(license_text.split()))
+    return license_text
 
 
 def cache_builder():
@@ -153,35 +155,28 @@ def cache_builder():
                 json_detail_data.pop("licenseTextHtml", None)
                 json_detail_data.pop("standardLicenseHeaderHtml", None)
                 if "standardLicenseTemplate" in json_detail_data:
-                    json_detail_data["regexpForMatch"] = convert_template_to_regexp(
+                    json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
                         json_detail_data["standardLicenseTemplate"])
 
-                if "licenseText" in json_detail_data:
+                if "license_text" in json_detail_data:
                     if "regexpForMatch" in json_detail_data:
-                        startTime = time.time()
-                        match, license_data, full_match = license_regexps_match(
-                            json_detail_data["regexpForMatch"], json_detail_data['licenseText'],
+                        start_time = time.time()
+                        match, license_data, full_match = _license_regexps_match(
+                            json_detail_data["regexpForMatch"], json_detail_data['license_text'],
                             fast_exit=False)
-                        executionTime = (time.time() - startTime)
-                        json_detail_data["matchCost"] = executionTime
+                        execution_time = (time.time() - start_time)
+                        json_detail_data["matchCost"] = execution_time
                         json_detail_data["matchConfidence"] = match
                         if match < 0.99:
                             print(
                                 f"Unable to match {match} full_match:{full_match}  exmplar "
                                 f"text to regexp for license {json_detail_data['licenseId']}  "
-                                f"license_data {json.dumps(license_data)} time {executionTime}")
+                                f"license_data {json.dumps(license_data)} time {execution_time}")
                         else:
                             print(
                                 f"Success to match and full_match:{full_match} exmplar text "
                                 f"to regexp for license {json_detail_data['licenseId']} "
-                                f"license_data {json.dumps(license_data)} time {executionTime}")
-                    with tempfile.NamedTemporaryFile(mode="wt", encoding="utf-8") as ntf:
-                        ntf.write(json_detail_data["licenseText"])
-                        ntf.flush()
-                        with open(ntf.name, "rt") as rf:
-                            sha1, analysis = process_license_file(rf, "text/plain", match=False)
-                        license["sha1"] = sha1
-                regexp_header = []
+                                f"license_data {json.dumps(license_data)} time {execution_time}")
 
             for k in json_detail_data:
                 if k not in license:
@@ -190,10 +185,9 @@ def cache_builder():
                 "name": license["name"],
                 "regexpForMatch": license["regexpForMatch"],
                 "matchCost": license["matchCost"],
-                "text_length": len(license["licenseText"]),
+                "text_length": len(license["license_text"]),
                 "matchConfidence": license["matchConfidence"]
             }
-        print(json.dumps(license), file=wf, flush=True)
 
     base_url = 'https://spdx.org/licenses'
     with urllib.request.urlopen(
@@ -207,28 +201,28 @@ def cache_builder():
             with urllib.request.urlopen(url, timeout=10) as f:
                 json_detail_data = json.loads(f.read().decode('utf-8'))
             if "licenseExceptionTemplate" in json_detail_data:
-                json_detail_data["regexpForMatch"] = convert_template_to_regexp(
+                json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
                     json_detail_data["licenseExceptionTemplate"])
             if "licenseExceptionText" in json_detail_data:
                 if "regexpForMatch" in json_detail_data:
-                    startTime = time.time()
-                    match, license_data, full_match = license_regexps_match(
+                    start_time = time.time()
+                    match, license_data, full_match = _license_regexps_match(
                         json_detail_data["regexpForMatch"],
                         json_detail_data['licenseExceptionText'], fast_exit=False)
-                    executionTime = (time.time() - startTime)
-                    json_detail_data["matchCost"] = executionTime
+                    execution_time = (time.time() - start_time)
+                    json_detail_data["matchCost"] = execution_time
                     json_detail_data["matchConfidence"] = match
                     if match < 0.99:
                         print(
                             f"Unable to match {match} full_match:{full_match}  exmplar text "
                             f"to regexp for exception "
                             f"{json_detail_data['licenseExceptionId']}  "
-                            f"license_data {json.dumps(license_data)} time {executionTime}")
+                            f"license_data {json.dumps(license_data)} time {execution_time}")
                     else:
                         print(
                             f"Success to match and full_match:{full_match} exmplar text to "
                             f"regexp for exception {json_detail_data['licenseExceptionId']} "
-                            f"license_data {json.dumps(license_data)} time {executionTime}")
+                            f"license_data {json.dumps(license_data)} time {execution_time}")
             for k in json_detail_data:
                 if k not in exception:
                     exception[k] = json_detail_data[k]
@@ -262,7 +256,6 @@ def _convert_template_to_regexp(template):
     regexp_open = 0
     avoid_greedy_regexp = False
     non_optional_text_done = 0
-    command = None
 
     for chunk_num, chunk in enumerate(chunks):
         sub_chunks = chunk.split("<<")
@@ -270,23 +263,20 @@ def _convert_template_to_regexp(template):
             if sub_chunk.strip() == "":
                 continue
             if regexp_open == 0 and len(
-                    regex_for_match) > 512 and not avoid_greedy_regexp and non_optional_text_done\
+                    regex_for_match) > 512 and not avoid_greedy_regexp and non_optional_text_done \
                     > 0:
                 regexp_to_match.append(regex_for_match)
                 non_optional_text_done = 0
                 regex_for_match = ""
             if sub_chunk.startswith("beginOptional"):
-                command = "beginOptional"
                 regexp_open += 1
                 regexp_in_total += 1
                 text = r"[ ]*(|"
             elif sub_chunk.startswith("endOptional"):
-                command = None
                 regexp_open -= 1
                 text = r")[ ]*"
             elif sub_chunk.startswith("var"):
                 regexp_in_total += 1
-                command = "var"
                 var_chunks = sub_chunk.split(";")
                 real_chunks = []
                 last_append = False
@@ -298,9 +288,8 @@ def _convert_template_to_regexp(template):
                     else:
                         temp_last_append = False
                     if last_append:
-                        real_chunks[len(real_chunks) - 1] = real_chunks[
-                                                                len(real_chunks) - 1] + \
-                                                            sub_var_chunk
+                        real_chunks[len(real_chunks) - 1] = \
+                            real_chunks[len(real_chunks) - 1] + sub_var_chunk
                     else:
                         real_chunks.append(sub_var_chunk)
                     last_append = temp_last_append
@@ -362,13 +351,19 @@ def _convert_template_to_regexp(template):
     regexp_to_match.append(regex_for_match)
     regexp_to_return = []
     for regexp_chunk in regexp_to_match:
-        regexp_chunk = regexp_chunk.replace("(|)", "").replace("[ ]*[ ]*", "[ ]*").replace(
+        regexp_chunk = regexp_chunk.replace(
+            "(|)", "").replace(
+            "[ ]*[ ]*", "[ ]*").replace(
             "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*",
-            "[ ]*").replace("[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
-                            "[ ]*").replace("[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
-                                            "[ ]*.*").replace("[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
-                                                              "[ ]*.*").replace(
-            "[ ]*.{0,40}[ ]*.{0,40}", "[ ]*.*").replace("\ ", " ")
+            "[ ]*").replace(
+            "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
+            "[ ]*").replace(
+            "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
+            "[ ]*.*").replace(
+            "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
+            "[ ]*.*").replace(
+            "[ ]*.{0,40}[ ]*.{0,40}", "[ ]*.*").replace(
+            "\\ ", " ")
         regexp_to_return.append(regexp_chunk)
 
     return {"regexps": regexp_to_return, "finger_prints": finger_prints}
@@ -453,6 +448,7 @@ def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
 
     return max_match, max_data, len(normalize("\n".join(wrap(normalized_license)))) == 0
 
+
 @cache
 def _load_license_analyser_cache():
     """
@@ -460,8 +456,8 @@ def _load_license_analyser_cache():
     :return:
     """
     cache_file = os.getenv("SPDX_MATCHER_CACHE_FILE", DEFAULT_CACHE_PATH)
-    with open(cache_file,mode="rt", encoding="utf-8") as cf:
-        cache = json.loads(cf.read())
+    with open(cache_file, mode="rt", encoding="utf-8") as cf:
+        match_cache = json.loads(cf.read())
 
     index = {
         "licenses": [],
@@ -486,16 +482,20 @@ def _load_license_analyser_cache():
                        "AGPL-3.0-only",
                        "AGPL-3.0-or-later"]
 
-    licenses_to_use = [{"id": k}|v for k,v in cache["licenses"].items() if v["matchConfidence"] == 1.0 and k not in popular_license]
-    license_to_use = [license["id"] for license in sorted(licenses_to_use, key=lambda x: x['matchCost'])]
+    licenses_to_use = [{"id": k} | v for k, v in match_cache["licenses"].items() if
+                       v["matchConfidence"] == 1.0 and k not in popular_license]
+    license_to_use = [license["id"] for license in
+                      sorted(licenses_to_use, key=lambda x: x['matchCost'])]
     popular_license.extend(license_to_use)
     index["licenses"] = popular_license
-    exceptions_to_use = [{"id": k}|v for k, v in cache["exceptions"].items() if v["matchConfidence"] == 1.0]
+    exceptions_to_use = [{"id": k} | v for k, v in match_cache["exceptions"].items() if
+                         v["matchConfidence"] == 1.0]
     exceptions_to_use = [exception["id"] for exception in
-                      sorted(exceptions_to_use, key=lambda x: x['matchCost'])]
+                         sorted(exceptions_to_use, key=lambda x: x['matchCost'])]
     index["exceptions"] = exceptions_to_use
 
-    return index, cache
+    return index, match_cache
+
 
 def analyse_license_text(original_content):
     """
@@ -504,7 +504,7 @@ def analyse_license_text(original_content):
     and exceptions are longer than the content.
     Starts with license then does exceptions.
     """
-    index, cache = _load_license_analyser_cache()
+    index, match_cache = _load_license_analyser_cache()
 
     analysed_length = 0
 
@@ -514,11 +514,9 @@ def analyse_license_text(original_content):
     }
 
     for lic_num, id in enumerate(index["licenses"]):
-        to_process = cache["licenses"][id]
+        to_process = match_cache["licenses"][id]
         match, license_data, full_match = _license_regexps_match(to_process["regexpForMatch"],
                                                                  original_content, fast_exit=True)
-        if lic_num > 0 and lic_num % 1000 == 0:
-            licenses_detected = [k for k,v in analysis['licenses'].items()]
 
         if match == 1.0:
             analysed_length += to_process["text_length"]
@@ -529,7 +527,7 @@ def analyse_license_text(original_content):
             return analysis, 1.0
 
     for lic_num, id in enumerate(index["exceptions"]):
-        to_process = cache["exceptions"][id]
+        to_process = match_cache["exceptions"][id]
         match, license_data, full_match = _license_regexps_match(to_process["regexpForMatch"],
                                                                  original_content, fast_exit=True)
         if match == 1.0:
@@ -540,4 +538,4 @@ def analyse_license_text(original_content):
         if analysed_length >= len(original_content):
             return analysis, 1.0
 
-    return analysis, analysed_length/len(original_content)
+    return analysis, analysed_length / len(original_content)
