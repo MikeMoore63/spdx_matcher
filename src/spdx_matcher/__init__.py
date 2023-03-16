@@ -1,3 +1,16 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+__all__ = ["__version__",
+           "normalize",
+           "LICENSE_HEADER_REMOVAL",
+           "COPYRIGHT_REMOVAL",
+           "APPENDIX_ADDENDUM_REMOVAL",
+           "REMOVE_ALL",
+           "REMOVE_FINGERPRINT",
+           "REMOVE_NONE",
+           "analyse_license_text"]
+
 import json
 import os
 import re
