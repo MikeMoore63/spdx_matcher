@@ -200,12 +200,12 @@ def cache_builder():
                         json_detail_data["standardLicenseTemplate"]
                     )
 
-                if "license_text" in json_detail_data:
+                if "licenseText" in json_detail_data:
                     if "regexpForMatch" in json_detail_data:
                         start_time = time.time()
                         match, license_data, full_match = _license_regexps_match(
                             json_detail_data["regexpForMatch"],
-                            json_detail_data["license_text"],
+                            json_detail_data["licenseText"],
                             fast_exit=False,
                         )
                         execution_time = time.time() - start_time
@@ -230,8 +230,8 @@ def cache_builder():
             match_cache["licenses"][license["licenseId"]] = {
                 "name": license["name"],
                 "regexpForMatch": license["regexpForMatch"],
-                "matchCost": license["matchCost"],
-                "text_length": len(license["license_text"]),
+                "matchCost": license["matchCost"] if "matchCost" in license else 100.0,
+                "text_length": len(license["licenseText"]),
                 "matchConfidence": license["matchConfidence"],
             }
 
@@ -278,7 +278,7 @@ def cache_builder():
             match_cache["exceptions"][exception["licenseExceptionId"]] = {
                 "name": exception["name"],
                 "regexpForMatch": exception["regexpForMatch"],
-                "matchCost": exception["matchCost"],
+                "matchCost": exception["matchCost"] if "matchCost" in exception else 100.0,
                 "text_length": len(exception["licenseExceptionText"]),
                 "matchConfidence": exception["matchConfidence"],
             }
