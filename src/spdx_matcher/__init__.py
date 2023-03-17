@@ -16,15 +16,17 @@
    limitations under the License.
 """
 
-__all__ = ["__version__",
-           "normalize",
-           "LICENSE_HEADER_REMOVAL",
-           "COPYRIGHT_REMOVAL",
-           "APPENDIX_ADDENDUM_REMOVAL",
-           "REMOVE_ALL",
-           "REMOVE_FINGERPRINT",
-           "REMOVE_NONE",
-           "analyse_license_text"]
+__all__ = [
+    "__version__",
+    "normalize",
+    "LICENSE_HEADER_REMOVAL",
+    "COPYRIGHT_REMOVAL",
+    "APPENDIX_ADDENDUM_REMOVAL",
+    "REMOVE_ALL",
+    "REMOVE_FINGERPRINT",
+    "REMOVE_NONE",
+    "analyse_license_text",
+]
 
 import json
 import os
@@ -34,59 +36,64 @@ import urllib.request
 from functools import cache
 from textwrap import wrap
 
-DEFAULT_CACHE_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)),
-                                  "spdxCache.json")
+DEFAULT_CACHE_PATH = os.path.join(
+    os.path.abspath(os.path.dirname(__file__)), "spdxCache.json"
+)
 
-URL_REGEX = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+URL_REGEX = (
+    r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+)
 COPYRIGHT_NOTICE_REGEX = r"((?<=\n)|.*)Copyright.*(?=\n|$)|Copyright.*\\n"
 COPYRIGHT_SYMBOLS = r"[©Ⓒⓒ]"
-BULLETS_NUMBERING_REGEX = r"\s(([0-9a-z]\.\s)+|(\([0-9a-z]\)\s)+|(\*\s)+)|(\s\([i]+\)\s)"
+BULLETS_NUMBERING_REGEX = (
+    r"\s(([0-9a-z]\.\s)+|(\([0-9a-z]\)\s)+|(\*\s)+)|(\s\([i]+\)\s)"
+)
 COMMENTS_REGEX = r"(\/\/|\/\*|#) +.*"
 EXTRANEOUS_REGEX = r"(?is)\s*end of terms and conditions.*"
 ADDENDIUM_EXHIBIT_REGEX = r"(?si)^(APPENDIX|APADDENDUM|EXHIBIT|ADDENDUM).*"
 VARIETAL_WORDS_SPELLING = {
-    'acknowledgment': 'acknowledgement',
-    'analogue': 'analog',
-    'analyse': 'analyze',
-    'artefact': 'artifact',
-    'authorisation': 'authorization',
-    'authorised': 'authorized',
-    'calibre': 'caliber',
-    'cancelled': 'canceled',
-    'capitalisations': 'capitalizations',
-    'catalogue': 'catalog',
-    'categorise': 'categorize',
-    'centre': 'center',
-    'emphasised': 'emphasized',
-    'favour': 'favor',
-    'favourite': 'favorite',
-    'fulfil': 'fulfill',
-    'fulfilment': 'fulfillment',
-    'initialise': 'initialize',
-    'judgment': 'judgement',
-    'labelling': 'labeling',
-    'labour': 'labor',
-    'licence': 'license',
-    'maximise': 'maximize',
-    'modelled': 'modeled',
-    'modelling': 'modeling',
-    'offence': 'offense',
-    'optimise': 'optimize',
-    'organisation': 'organization',
-    'organise': 'organize',
-    'practise': 'practice',
-    'programme': 'program',
-    'realise': 'realize',
-    'recognise': 'recognize',
-    'signalling': 'signaling',
-    'sub-license': 'sublicense',
-    'sub license': 'sublicense',
-    'utilisation': 'utilization',
-    'whilst': 'while',
-    'wilful': 'wilfull',
-    'non-commercial': 'noncommercial',
-    'per cent': 'percent',
-    'owner': 'holder'
+    "acknowledgment": "acknowledgement",
+    "analogue": "analog",
+    "analyse": "analyze",
+    "artefact": "artifact",
+    "authorisation": "authorization",
+    "authorised": "authorized",
+    "calibre": "caliber",
+    "cancelled": "canceled",
+    "capitalisations": "capitalizations",
+    "catalogue": "catalog",
+    "categorise": "categorize",
+    "centre": "center",
+    "emphasised": "emphasized",
+    "favour": "favor",
+    "favourite": "favorite",
+    "fulfil": "fulfill",
+    "fulfilment": "fulfillment",
+    "initialise": "initialize",
+    "judgment": "judgement",
+    "labelling": "labeling",
+    "labour": "labor",
+    "licence": "license",
+    "maximise": "maximize",
+    "modelled": "modeled",
+    "modelling": "modeling",
+    "offence": "offense",
+    "optimise": "optimize",
+    "organisation": "organization",
+    "organise": "organize",
+    "practise": "practice",
+    "programme": "program",
+    "realise": "realize",
+    "recognise": "recognize",
+    "signalling": "signaling",
+    "sub-license": "sublicense",
+    "sub license": "sublicense",
+    "utilisation": "utilization",
+    "whilst": "while",
+    "wilful": "wilfull",
+    "non-commercial": "noncommercial",
+    "per cent": "percent",
+    "owner": "holder",
 }
 
 LICENSE_HEADER_REMOVAL = 0x01
@@ -108,7 +115,9 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     """
 
     # To avoid a possibility of a non-match due to urls not being same.
-    license_text = re.sub(URL_REGEX, 'normalized/url', license_text, flags=re.IGNORECASE)
+    license_text = re.sub(
+        URL_REGEX, "normalized/url", license_text, flags=re.IGNORECASE
+    )
 
     # To avoid the license mismatch merely due to the existence or absence of code comment
     # indicators placed within the license text, they are just removed.
@@ -118,7 +127,9 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     # terms of a license is different or missing.
     if remove_sections & APPENDIX_ADDENDUM_REMOVAL:
         license_text = re.sub(EXTRANEOUS_REGEX, "", license_text, flags=re.IGNORECASE)
-        license_text = re.sub(ADDENDIUM_EXHIBIT_REGEX, "", license_text, flags=re.IGNORECASE)
+        license_text = re.sub(
+            ADDENDIUM_EXHIBIT_REGEX, "", license_text, flags=re.IGNORECASE
+        )
 
     # By using a default copyright symbol (c)", we can avoid the possibility of a mismatch.
     # normalise copyright
@@ -129,7 +140,9 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     # substantive and is removed.
     # B.11 Copyright notice removal for matching
     if remove_sections & COPYRIGHT_REMOVAL:
-        license_text = re.sub(COPYRIGHT_NOTICE_REGEX, "", license_text, flags=re.IGNORECASE)
+        license_text = re.sub(
+            COPYRIGHT_NOTICE_REGEX, "", license_text, flags=re.IGNORECASE
+        )
 
     # To avoid a possibility of a non-match due to case sensitivity.
     license_text = license_text.lower()
@@ -138,11 +151,14 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     license_text = license_text.replace("–", "-").replace("—", "-")
 
     # To remove the license name or title present at the beginning of the license text.
-    if remove_sections & LICENSE_HEADER_REMOVAL and 'license' in license_text.split('\n')[0]:
-        license_text = '\n'.join(license_text.split('\n')[1:])
+    if (
+        remove_sections & LICENSE_HEADER_REMOVAL
+        and "license" in license_text.split("\n")[0]
+    ):
+        license_text = "\n".join(license_text.split("\n")[1:])
 
     # B.6.4 Guideline: Quotes
-    license_text = license_text.replace("\"", "'").replace("`", "'")
+    license_text = license_text.replace('"', "'").replace("`", "'")
 
     # To avoid the possibility of a non-match due to variations of bullets, numbers, letter,
     # or no bullets used are simply removed.
@@ -163,15 +179,12 @@ def cache_builder():
     Generates cache file and writes to location of environment
     """
 
-    match_cache = {
-        "licenses": {},
-        "exceptions": {}
-    }
+    match_cache = {"licenses": {}, "exceptions": {}}
 
     with urllib.request.urlopen(
-            'https://spdx.org/licenses/licenses.json',
-            timeout=10) as f:
-        json_list_data = json.loads(f.read().decode('utf-8'))
+        "https://spdx.org/licenses/licenses.json", timeout=10
+    ) as f:
+        json_list_data = json.loads(f.read().decode("utf-8"))
 
     # capture license data
     # LICENSE_STRINGS_TO_NORMALISE we look to generate this in this
@@ -179,32 +192,37 @@ def cache_builder():
     for license in json_list_data["licenses"]:
         if "detailsUrl" in license:
             with urllib.request.urlopen(license["detailsUrl"], timeout=10) as f:
-                json_detail_data = json.loads(f.read().decode('utf-8'))
+                json_detail_data = json.loads(f.read().decode("utf-8"))
                 json_detail_data.pop("licenseTextHtml", None)
                 json_detail_data.pop("standardLicenseHeaderHtml", None)
                 if "standardLicenseTemplate" in json_detail_data:
                     json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
-                        json_detail_data["standardLicenseTemplate"])
+                        json_detail_data["standardLicenseTemplate"]
+                    )
 
                 if "license_text" in json_detail_data:
                     if "regexpForMatch" in json_detail_data:
                         start_time = time.time()
                         match, license_data, full_match = _license_regexps_match(
-                            json_detail_data["regexpForMatch"], json_detail_data['license_text'],
-                            fast_exit=False)
-                        execution_time = (time.time() - start_time)
+                            json_detail_data["regexpForMatch"],
+                            json_detail_data["license_text"],
+                            fast_exit=False,
+                        )
+                        execution_time = time.time() - start_time
                         json_detail_data["matchCost"] = execution_time
                         json_detail_data["matchConfidence"] = match
                         if match < 0.99:
                             print(
                                 f"Unable to match {match} full_match:{full_match}  exmplar "
                                 f"text to regexp for license {json_detail_data['licenseId']}  "
-                                f"license_data {json.dumps(license_data)} time {execution_time}")
+                                f"license_data {json.dumps(license_data)} time {execution_time}"
+                            )
                         else:
                             print(
                                 f"Success to match and full_match:{full_match} exmplar text "
                                 f"to regexp for license {json_detail_data['licenseId']} "
-                                f"license_data {json.dumps(license_data)} time {execution_time}")
+                                f"license_data {json.dumps(license_data)} time {execution_time}"
+                            )
 
             for k in json_detail_data:
                 if k not in license:
@@ -214,30 +232,31 @@ def cache_builder():
                 "regexpForMatch": license["regexpForMatch"],
                 "matchCost": license["matchCost"],
                 "text_length": len(license["license_text"]),
-                "matchConfidence": license["matchConfidence"]
+                "matchConfidence": license["matchConfidence"],
             }
 
-    base_url = 'https://spdx.org/licenses'
-    with urllib.request.urlopen(
-            f'{base_url}/exceptions.json',
-            timeout=10) as f:
-        json_list_data = json.loads(f.read().decode('utf-8'))
+    base_url = "https://spdx.org/licenses"
+    with urllib.request.urlopen(f"{base_url}/exceptions.json", timeout=10) as f:
+        json_list_data = json.loads(f.read().decode("utf-8"))
 
     for exception in json_list_data["exceptions"]:
         if "reference" in exception:
             url = exception["reference"].replace(".", base_url, 1)
             with urllib.request.urlopen(url, timeout=10) as f:
-                json_detail_data = json.loads(f.read().decode('utf-8'))
+                json_detail_data = json.loads(f.read().decode("utf-8"))
             if "licenseExceptionTemplate" in json_detail_data:
                 json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
-                    json_detail_data["licenseExceptionTemplate"])
+                    json_detail_data["licenseExceptionTemplate"]
+                )
             if "licenseExceptionText" in json_detail_data:
                 if "regexpForMatch" in json_detail_data:
                     start_time = time.time()
                     match, license_data, full_match = _license_regexps_match(
                         json_detail_data["regexpForMatch"],
-                        json_detail_data['licenseExceptionText'], fast_exit=False)
-                    execution_time = (time.time() - start_time)
+                        json_detail_data["licenseExceptionText"],
+                        fast_exit=False,
+                    )
+                    execution_time = time.time() - start_time
                     json_detail_data["matchCost"] = execution_time
                     json_detail_data["matchConfidence"] = match
                     if match < 0.99:
@@ -245,12 +264,14 @@ def cache_builder():
                             f"Unable to match {match} full_match:{full_match}  exmplar text "
                             f"to regexp for exception "
                             f"{json_detail_data['licenseExceptionId']}  "
-                            f"license_data {json.dumps(license_data)} time {execution_time}")
+                            f"license_data {json.dumps(license_data)} time {execution_time}"
+                        )
                     else:
                         print(
                             f"Success to match and full_match:{full_match} exmplar text to "
                             f"regexp for exception {json_detail_data['licenseExceptionId']} "
-                            f"license_data {json.dumps(license_data)} time {execution_time}")
+                            f"license_data {json.dumps(license_data)} time {execution_time}"
+                        )
             for k in json_detail_data:
                 if k not in exception:
                     exception[k] = json_detail_data[k]
@@ -259,7 +280,7 @@ def cache_builder():
                 "regexpForMatch": exception["regexpForMatch"],
                 "matchCost": exception["matchCost"],
                 "text_length": len(exception["licenseExceptionText"]),
-                "matchConfidence": exception["matchConfidence"]
+                "matchConfidence": exception["matchConfidence"],
             }
 
         cache_file = os.getenv("SPDX_MATCHER_CACHE_FILE", DEFAULT_CACHE_PATH)
@@ -290,9 +311,12 @@ def _convert_template_to_regexp(template):
         for sub_chunk in sub_chunks:
             if sub_chunk.strip() == "":
                 continue
-            if regexp_open == 0 and len(
-                    regex_for_match) > 512 and not avoid_greedy_regexp and non_optional_text_done \
-                    > 0:
+            if (
+                regexp_open == 0
+                and len(regex_for_match) > 512
+                and not avoid_greedy_regexp
+                and non_optional_text_done > 0
+            ):
                 regexp_to_match.append(regex_for_match)
                 non_optional_text_done = 0
                 regex_for_match = ""
@@ -316,8 +340,9 @@ def _convert_template_to_regexp(template):
                     else:
                         temp_last_append = False
                     if last_append:
-                        real_chunks[len(real_chunks) - 1] = \
+                        real_chunks[len(real_chunks) - 1] = (
                             real_chunks[len(real_chunks) - 1] + sub_var_chunk
+                        )
                     else:
                         real_chunks.append(sub_var_chunk)
                     last_append = temp_last_append
@@ -326,15 +351,18 @@ def _convert_template_to_regexp(template):
                 for sub_var_chunk in real_chunks:
                     if sub_var_chunk.startswith("match="):
                         # remove quotes only at start and end not in the middle
-                        rege_exp_to_use = re.sub(r"^[\"'](.*)[\"']$", r"\1",
-                                                 sub_var_chunk[len("match="):])
+                        rege_exp_to_use = re.sub(
+                            r"^[\"'](.*)[\"']$", r"\1", sub_var_chunk[len("match=") :]
+                        )
                         # replace white spaces with a single space in case has wierd text so will
                         # match original input text
                         # normalize words
                         # normalize copyright
                         # normalize quotes
                         # normalize white space
-                        rege_exp_to_use = normalize(rege_exp_to_use, remove_sections=REMOVE_NONE)
+                        rege_exp_to_use = normalize(
+                            rege_exp_to_use, remove_sections=REMOVE_NONE
+                        )
                         # relax 0 to 20 to 0 to 40 as recognised as incorrectly done
                         rege_exp_to_use = rege_exp_to_use.replace(".{0,20}", ".{0,40}")
                         # make sure regexps are valid
@@ -344,7 +372,11 @@ def _convert_template_to_regexp(template):
                             rege_exp_to_use = rf".{{0,{len(rege_exp_to_use)}}}"
 
                     if sub_var_chunk.startswith("name="):
-                        field_name = sub_var_chunk[len("name="):].replace("\"", "").replace("'", "")
+                        field_name = (
+                            sub_var_chunk[len("name=") :]
+                            .replace('"', "")
+                            .replace("'", "")
+                        )
                         # remove invalid python variable name characters
                         # must start with alpha or underscore
                         if field_name[0].isdigit():
@@ -355,9 +387,9 @@ def _convert_template_to_regexp(template):
                         else:
                             field_names.append(field_name)
                 if field_name:
-                    text = r'[ ]*' + rf"(?P<{field_name}>{rege_exp_to_use})" + r"[ ]*"
+                    text = r"[ ]*" + rf"(?P<{field_name}>{rege_exp_to_use})" + r"[ ]*"
                 else:
-                    text = r'[ ]*' + rege_exp_to_use + r"[ ]*"
+                    text = r"[ ]*" + rege_exp_to_use + r"[ ]*"
                 avoid_greedy_regexp = True
             else:
                 text = normalize(sub_chunk, remove_sections=REMOVE_NONE)
@@ -379,19 +411,19 @@ def _convert_template_to_regexp(template):
     regexp_to_match.append(regex_for_match)
     regexp_to_return = []
     for regexp_chunk in regexp_to_match:
-        regexp_chunk = regexp_chunk.replace(
-            "(|)", "").replace(
-            "[ ]*[ ]*", "[ ]*").replace(
-            "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*",
-            "[ ]*").replace(
-            "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
-            "[ ]*").replace(
-            "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
-            "[ ]*.*").replace(
-            "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}",
-            "[ ]*.*").replace(
-            "[ ]*.{0,40}[ ]*.{0,40}", "[ ]*.*").replace(
-            "\\ ", " ")
+        regexp_chunk = (
+            regexp_chunk.replace("(|)", "")
+            .replace("[ ]*[ ]*", "[ ]*")
+            .replace(
+                "[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*",
+                "[ ]*",
+            )
+            .replace("[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}", "[ ]*")
+            .replace("[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}", "[ ]*.*")
+            .replace("[ ]*.{0,40}[ ]*.{0,40}[ ]*.{0,40}", "[ ]*.*")
+            .replace("[ ]*.{0,40}[ ]*.{0,40}", "[ ]*.*")
+            .replace("\\ ", " ")
+        )
         regexp_to_return.append(regexp_chunk)
 
     return {"regexps": regexp_to_return, "finger_prints": finger_prints}
@@ -437,8 +469,10 @@ def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
     # it assumes that only one of each type
     # however we may have similar text in licenses so we iterate
     # success is finding it all
-    for initial_match in re.finditer(initial_regexp, normalized_all_license, flags=re.IGNORECASE):
-        normalized_license = normalized_all_license[initial_match.end():]
+    for initial_match in re.finditer(
+        initial_regexp, normalized_all_license, flags=re.IGNORECASE
+    ):
+        normalized_license = normalized_all_license[initial_match.end() :]
         matches = 1
         non_matches = 0
         all_data = {}
@@ -468,10 +502,15 @@ def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
 
         # hey we found all of it contigously happy days
         if matches / num_regexp == 1.0:
-            return matches / num_regexp, all_data, len(
-                normalize("\n".join(wrap(normalized_license)))) == 0
+            return (
+                matches / num_regexp,
+                all_data,
+                len(normalize("\n".join(wrap(normalized_license)))) == 0,
+            )
 
-        max_match = matches / num_regexp if matches / num_regexp > max_match else max_match
+        max_match = (
+            matches / num_regexp if matches / num_regexp > max_match else max_match
+        )
         max_data = all_data if len(all_data) > len(max_data) else max_data
 
     return max_match, max_data, len(normalize("\n".join(wrap(normalized_license)))) == 0
@@ -487,39 +526,48 @@ def _load_license_analyser_cache():
     with open(cache_file, mode="rt", encoding="utf-8") as cf:
         match_cache = json.loads(cf.read())
 
-    index = {
-        "licenses": [],
-        "exceptions": []
-    }
-    popular_license = ["Apache-2.0",
-                       "MIT",
-                       "LGPL-2.0-only",
-                       "Apache-1.0",
-                       "Apache-1.1",
-                       "BSD-3-Clause",
-                       "BSD-3-Clause-Attribution",
-                       "GPL-3.0-only",
-                       "GPL-3.0-or-later",
-                       "GPL-2.0-or-later",
-                       "GPL-2.0-only",
-                       "GPL-1.0-or-later",
-                       "GPL-1.0-only",
-                       # dangerous?
-                       "AGPL-1.0-only",
-                       "AGPL-1.0-or-later",
-                       "AGPL-3.0-only",
-                       "AGPL-3.0-or-later"]
+    index = {"licenses": [], "exceptions": []}
+    popular_license = [
+        "Apache-2.0",
+        "MIT",
+        "LGPL-2.0-only",
+        "Apache-1.0",
+        "Apache-1.1",
+        "BSD-3-Clause",
+        "BSD-3-Clause-Attribution",
+        "GPL-3.0-only",
+        "GPL-3.0-or-later",
+        "GPL-2.0-or-later",
+        "GPL-2.0-only",
+        "GPL-1.0-or-later",
+        "GPL-1.0-only",
+        # dangerous?
+        "AGPL-1.0-only",
+        "AGPL-1.0-or-later",
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+    ]
 
-    licenses_to_use = [{"id": k} | v for k, v in match_cache["licenses"].items() if
-                       v["matchConfidence"] == 1.0 and k not in popular_license]
-    license_to_use = [license["id"] for license in
-                      sorted(licenses_to_use, key=lambda x: x['matchCost'])]
+    licenses_to_use = [
+        {"id": k} | v
+        for k, v in match_cache["licenses"].items()
+        if v["matchConfidence"] == 1.0 and k not in popular_license
+    ]
+    license_to_use = [
+        license["id"]
+        for license in sorted(licenses_to_use, key=lambda x: x["matchCost"])
+    ]
     popular_license.extend(license_to_use)
     index["licenses"] = popular_license
-    exceptions_to_use = [{"id": k} | v for k, v in match_cache["exceptions"].items() if
-                         v["matchConfidence"] == 1.0]
-    exceptions_to_use = [exception["id"] for exception in
-                         sorted(exceptions_to_use, key=lambda x: x['matchCost'])]
+    exceptions_to_use = [
+        {"id": k} | v
+        for k, v in match_cache["exceptions"].items()
+        if v["matchConfidence"] == 1.0
+    ]
+    exceptions_to_use = [
+        exception["id"]
+        for exception in sorted(exceptions_to_use, key=lambda x: x["matchCost"])
+    ]
     index["exceptions"] = exceptions_to_use
 
     return index, match_cache
@@ -536,15 +584,13 @@ def analyse_license_text(original_content):
 
     analysed_length = 0
 
-    analysis = {
-        "licenses": {},
-        "exceptions": {}
-    }
+    analysis = {"licenses": {}, "exceptions": {}}
 
     for lic_num, id in enumerate(index["licenses"]):
         to_process = match_cache["licenses"][id]
-        match, license_data, full_match = _license_regexps_match(to_process["regexpForMatch"],
-                                                                 original_content, fast_exit=True)
+        match, license_data, full_match = _license_regexps_match(
+            to_process["regexpForMatch"], original_content, fast_exit=True
+        )
 
         if match == 1.0:
             analysed_length += to_process["text_length"]
@@ -556,8 +602,9 @@ def analyse_license_text(original_content):
 
     for lic_num, id in enumerate(index["exceptions"]):
         to_process = match_cache["exceptions"][id]
-        match, license_data, full_match = _license_regexps_match(to_process["regexpForMatch"],
-                                                                 original_content, fast_exit=True)
+        match, license_data, full_match = _license_regexps_match(
+            to_process["regexpForMatch"], original_content, fast_exit=True
+        )
         if match == 1.0:
             analysed_length += to_process["text_length"]
             analysis["exceptions"][id] = license_data
@@ -567,3 +614,8 @@ def analyse_license_text(original_content):
             return analysis, 1.0
 
     return analysis, analysed_length / len(original_content)
+
+
+# to help with local devugging of cache builder
+if __name__ == "__main__":
+    cache_builder()

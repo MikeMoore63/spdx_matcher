@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import unittest
+
+import spdx_matcher
 
 """
   Copyright 2023 Mike Moore
@@ -19,17 +22,15 @@
 
 """
 You may think the test here are quite "light" and in general I would agree.
-But I would highlight this module is heavily data driven. It lives and breathes by quality 
-of license templates available from spdx. The matching algorithm itself is generic. 
+But I would highlight this module is heavily data driven. It lives and breathes by quality
+of license templates available from spdx. The matching algorithm itself is generic.
 
-The cache builder tests every template regexp generated against the exemplar license provided 
-also by SPDX. So you canuse that as more complete coverage of the templates. This though also does 
-test the algorithm quite heavily for the core algorithm. So I am relying on this above what is here.
+The cache builder tests every template regexp generated against the exemplar license provided
+also by SPDX. So you canuse that as more complete coverage of the templates. This though also does
+test the algorithm quite heavily for the core algorithm. So I am relying on this above
+what is here.
 
 """
-import unittest
-
-import spdx_matcher
 
 APACHE2 = """
                                  Apache License
@@ -208,12 +209,10 @@ APACHE2 = """
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
-   
 """
 
 
 class TestSimple(unittest.TestCase):
-
     def test_apache2(self):
         analysis, match = spdx_matcher.analyse_license_text(APACHE2)
 
@@ -221,5 +220,5 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("Apache-2.0" in analysis["licenses"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

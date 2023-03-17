@@ -1,12 +1,4 @@
 [project]
-# This is the name of your project. The first time you publish this
-# package, this name will be registered for you. It will determine how
-# users can install this project, e.g.:
-#
-# $ pip install spdx_matcher
-#
-# And where it will live on PyPI: https://pypi.org/project/spdx_matcher/
-#
 name = "spdx_matcher"  # Required
 
 # Versions should comply with PEP 440:
@@ -99,7 +91,7 @@ dependencies = [ # Optional
 # Similar to `dependencies` above, these must be valid existing
 # projects.
 [project.optional-dependencies] # Optional
-dev = ["check-manifest"]
+dev = ["check-manifest","black"]
 test = ["coverage"]
 
 # List URLs that are relevant to your project
@@ -126,6 +118,9 @@ sample = "spdx_matcher_cachebuilder:cache_builder"
 # If you are using a different build backend, you will need to change this.
 [tool.setuptools]
 package-data = {"spdx_matcher" = ["spdxCache.json"]}
+
+[tool.black]
+line-length = 88
 
 [build-system]
 # These are the assumed default build requirements from pip:
