@@ -235,6 +235,9 @@ print(f"Processed {files_processed} {files_processed/(endTime - startTime - lice
 print(f"{_store_content.cache_info()}")
 ```
 
+This package does contain data from SPDX which is release under the [Creative Commons Attribution 3.0](https://spdx.org/licenses/CC-BY-3.0] Unported) or CC-BY-3.0 license.
+
+
 
 
 
