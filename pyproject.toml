@@ -6,7 +6,7 @@ name = "spdx_matcher"  # Required
 #
 # For a discussion on single-sourcing the version, see
 # https://packaging.python.org/guides/single-sourcing-package-version/
-version = "0.0.8"  # Required
+version = "0.0.9"  # Required
 
 # This is a one-line description or tagline of what your project does. This
 # corresponds to the "Summary" metadata field:
@@ -120,7 +120,7 @@ build_spdx_matcher_cache = "spdx_matcher:cache_builder"
 package-data = {"spdx_matcher" = ["spdxCache.json"]}
 
 [project.entry-points."spdx_matcher"]
-pyinstaller40 = "spdx_matcher.__pyinstaller:get_hook_dirs"
+pyinstaller40 = "spdx_matcher._pyinstaller:get_hook_dirs"
 
 [tool.black]
 line-length = 88
