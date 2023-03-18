@@ -1,0 +1,4 @@
+# demo requirements.txt
+python-magic
+spdx_matcher
+google-cloud-storage
