@@ -546,6 +546,7 @@ def _load_license_analyser_cache():
         "AGPL-1.0-or-later",
         "AGPL-3.0-only",
         "AGPL-3.0-or-later",
+        "SSPL-1.0",
     ]
 
     licenses_to_use = [
