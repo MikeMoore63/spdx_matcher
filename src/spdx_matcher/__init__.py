@@ -97,8 +97,7 @@ VARIETAL_WORDS_SPELLING = {
 }
 
 # a data structure to allow template overrides if match does not happen but its important
-TEMPLATE_OVERRIDE = {
-}
+TEMPLATE_OVERRIDE = {}
 
 LICENSE_HEADER_REMOVAL = 0x01
 COPYRIGHT_REMOVAL = 0x02
@@ -162,7 +161,15 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
         license_text = "\n".join(license_text.split("\n")[1:])
 
     # B.6.4 Guideline: Quotes
-    license_text = license_text.replace('"', "'").replace("`", "'").replace("“","'").replace("”","'").replace("´","'").replace("‘","'").replace("’","'")
+    license_text = (
+        license_text.replace('"', "'")
+        .replace("`", "'")
+        .replace("“", "'")
+        .replace("”", "'")
+        .replace("´", "'")
+        .replace("‘", "'")
+        .replace("’", "'")
+    )
 
     # To avoid the possibility of a non-match due to variations of bullets, numbers, letter,
     # or no bullets used are simply removed.
@@ -222,7 +229,9 @@ def cache_builder():
                                 f"license_data {json.dumps(license_data)} time {execution_time} "
                                 f"but we have override testing override"
                             )
-                            json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
+                            json_detail_data[
+                                "regexpForMatch"
+                            ] = _convert_template_to_regexp(
                                 TEMPLATE_OVERRIDE[license["licenseId"]]
                             )
                             start_time = time.time()
@@ -302,7 +311,9 @@ def cache_builder():
             match_cache["exceptions"][exception["licenseExceptionId"]] = {
                 "name": exception["name"],
                 "regexpForMatch": exception["regexpForMatch"],
-                "matchCost": exception["matchCost"] if "matchCost" in exception else 100.0,
+                "matchCost": exception["matchCost"]
+                if "matchCost" in exception
+                else 100.0,
                 "text_length": len(exception["licenseExceptionText"]),
                 "matchConfidence": exception["matchConfidence"],
             }
@@ -451,8 +462,6 @@ def _convert_template_to_regexp(template):
         regexp_to_return.append(regexp_chunk)
 
     return {"regexps": regexp_to_return, "finger_prints": finger_prints}
-
-
 
 
 def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
