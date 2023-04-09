@@ -96,6 +96,10 @@ VARIETAL_WORDS_SPELLING = {
     "owner": "holder",
 }
 
+# a data structure to allow template overrides if match does not happen but its important
+TEMPLATE_OVERRIDE = {
+}
+
 LICENSE_HEADER_REMOVAL = 0x01
 COPYRIGHT_REMOVAL = 0x02
 APPENDIX_ADDENDUM_REMOVAL = 0x04
@@ -158,7 +162,7 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
         license_text = "\n".join(license_text.split("\n")[1:])
 
     # B.6.4 Guideline: Quotes
-    license_text = license_text.replace('"', "'").replace("`", "'")
+    license_text = license_text.replace('"', "'").replace("`", "'").replace("“","'").replace("”","'").replace("´","'").replace("‘","'").replace("’","'")
 
     # To avoid the possibility of a non-match due to variations of bullets, numbers, letter,
     # or no bullets used are simply removed.
@@ -211,6 +215,26 @@ def cache_builder():
                         execution_time = time.time() - start_time
                         json_detail_data["matchCost"] = execution_time
                         json_detail_data["matchConfidence"] = match
+                        if match < 0.99 and license["licenseId"] in TEMPLATE_OVERRIDE:
+                            print(
+                                f"Unable to match {match} full_match:{full_match}  exmplar text "
+                                f"to regexp for license {json_detail_data['licenseId']}  "
+                                f"license_data {json.dumps(license_data)} time {execution_time} "
+                                f"but we have override testing override"
+                            )
+                            json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
+                                TEMPLATE_OVERRIDE[license["licenseId"]]
+                            )
+                            start_time = time.time()
+                            match, license_data, full_match = _license_regexps_match(
+                                json_detail_data["regexpForMatch"],
+                                json_detail_data["licenseText"],
+                                fast_exit=False,
+                            )
+                            execution_time = time.time() - start_time
+                            json_detail_data["matchCost"] = execution_time
+                            json_detail_data["matchConfidence"] = match
+
                         if match < 0.99:
                             print(
                                 f"Unable to match {match} full_match:{full_match}  exmplar "
@@ -429,6 +453,8 @@ def _convert_template_to_regexp(template):
     return {"regexps": regexp_to_return, "finger_prints": finger_prints}
 
 
+
+
 def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
     """
     Basic matcher given alist of regexp will iterate through them looking for
@@ -450,11 +476,15 @@ def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
     max_data = {}
 
     start_find = 0
-    for finger_print in regexp_to_match_input["finger_prints"]:
+    fp_match = 0
+    for fp_index, finger_print in enumerate(regexp_to_match_input["finger_prints"]):
         index = normalized_all_license.find(finger_print, start_find)
-        if index < 0:
-            return 0, max_data, 0
-        start_find = index + len(finger_print)
+        if index >= 0:
+            start_find = index + len(finger_print)
+            fp_match += 1
+        else:
+            if fast_exit:
+                return 0, max_data, 0
 
     num_regexp = len(regexp_to_match_input["regexps"])
     if num_regexp > 1:
