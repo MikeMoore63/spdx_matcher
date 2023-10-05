@@ -33,6 +33,7 @@ import os
 import re
 import time
 import urllib.request
+import logging
 from functools import cache
 from textwrap import wrap
 
@@ -105,6 +106,8 @@ APPENDIX_ADDENDUM_REMOVAL = 0x04
 REMOVE_ALL = LICENSE_HEADER_REMOVAL | COPYRIGHT_REMOVAL | APPENDIX_ADDENDUM_REMOVAL
 REMOVE_FINGERPRINT = LICENSE_HEADER_REMOVAL | COPYRIGHT_REMOVAL
 REMOVE_NONE = 0x0
+MAX_LINE_SIZE = 3 * 1024
+LARGE_CONTENT = 30 * 1024
 
 
 def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
@@ -116,6 +119,11 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     Returns:
         string -- license text nomalized with all the SPDX matching guidelines.
     """
+
+    # remove very wide lines
+    license_lines = license_text.split("\n")
+    license_lines = [line for line in license_lines if len(line) < MAX_LINE_SIZE]
+    license_text = "\n".join(license_lines)
 
     # To avoid a possibility of a non-match due to urls not being same.
     license_text = re.sub(
@@ -143,7 +151,7 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     # substantive and is removed.
     # B.11 Copyright notice removal for matching
     if remove_sections & COPYRIGHT_REMOVAL:
-        license_text = re.sub(
+        license_text += re.sub(
             COPYRIGHT_NOTICE_REGEX, "", license_text, flags=re.IGNORECASE
         )
 
@@ -508,9 +516,10 @@ def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
     # it assumes that only one of each type
     # however we may have similar text in licenses so we iterate
     # success is finding it all
-    for initial_match in re.finditer(
-        initial_regexp, normalized_all_license, flags=re.IGNORECASE
+    for item_num, initial_match in enumerate(
+        re.finditer(initial_regexp, normalized_all_license, flags=re.IGNORECASE)
     ):
+        logging.getLogger(__name__).debug(f"iterating regexp {item_num}")
         normalized_license = normalized_all_license[initial_match.end() :]
         matches = 1
         non_matches = 0
@@ -612,7 +621,7 @@ def _load_license_analyser_cache():
     return index, match_cache
 
 
-def analyse_license_text(original_content):
+def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=None):
     """
     This method uses regexp cache to search for license text.
     It keeps looking until checks finished or sum o flicense text
@@ -621,17 +630,40 @@ def analyse_license_text(original_content):
     """
     index, match_cache = _load_license_analyser_cache()
 
+    # expensive licenses
+    # avoid if content considered large
+    # regexp has back tracking which is inefficient
+    if avoid_license is None:
+        if len(original_content) > LARGE_CONTENT:
+            avoid_license = [
+                "0BSD",
+                "JSON",
+                "Zlib",
+                "BSD-Source-Code",
+                "BSD-2-Clause",
+                "BSD-2-Clause-Views",
+            ]
+        else:
+            avoid_license = []
+
+    if avoid_exceptions is None:
+        avoid_exceptions = []
+
     analysed_length = 0
 
     analysis = {"licenses": {}, "exceptions": {}}
 
     for lic_num, id in enumerate(index["licenses"]):
+        if id in avoid_license:
+            continue
         to_process = match_cache["licenses"][id]
+        logging.getLogger(__name__).debug(f"processing license {id}")
         match, license_data, full_match = _license_regexps_match(
             to_process["regexpForMatch"], original_content, fast_exit=True
         )
 
         if match == 1.0:
+            logging.getLogger(__name__).debug(f"matched license {id}")
             analysed_length += to_process["text_length"]
             analysis["licenses"][id] = license_data
 
@@ -640,7 +672,10 @@ def analyse_license_text(original_content):
             return analysis, 1.0
 
     for lic_num, id in enumerate(index["exceptions"]):
+        if id in avoid_exceptions:
+            continue
         to_process = match_cache["exceptions"][id]
+        logging.getLogger(__name__).debug(f"processing exceptions {id}")
         match, license_data, full_match = _license_regexps_match(
             to_process["regexpForMatch"], original_content, fast_exit=True
         )
