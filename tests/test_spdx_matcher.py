@@ -32,10 +32,10 @@ also by SPDX. So you canuse that as more complete coverage of the templates. Thi
 test the algorithm quite heavily for the core algorithm. So I am relying on this above
 what is here.
 
-Hence main test quite simple but we do test a simple license file and complex large multi-license 
-file. 
+Hence main test quite simple but we do test a simple license file and complex large multi-license
+file.
 
-The second CHALLENGING.txt is meant to be about worst case of license file in the wild. This 
+The second CHALLENGING.txt is meant to be about worst case of license file in the wild. This
 helps identify
 issues with regexp performance such as back tracking
 """
