@@ -3,12 +3,10 @@ name: tox
 on:
   push:
     branches:
-      - main_disabled
-      - master_disabled
+      - addworkflows
   pull_request:
     branches:
-      - main_disabled
-      - master_disabled
+      - main
 
 jobs:
   build:
