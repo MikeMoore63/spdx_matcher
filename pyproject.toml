@@ -126,6 +126,9 @@ hook-dirs = "spdx_matcher._pyinstaller:get_hook_dirs"
 [tool.black]
 line-length = 88
 
+[tool.check-manifest]
+ignore = ["renovate.json"]
+
 [build-system]
 # These are the assumed default build requirements from pip:
 # https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
