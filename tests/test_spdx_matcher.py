@@ -4,6 +4,7 @@ import unittest
 import logging
 import hashlib
 import spdx_matcher
+from pathlib import Path
 
 logging.basicConfig(level=logging.DEBUG)
 """
@@ -40,10 +41,12 @@ helps identify
 issues with regexp performance such as back tracking
 """
 
-with open("tests/APACHE.txt", mode="rt", encoding="utf-8") as af:
+current_dir = Path(__file__).parent
+
+with open(f"{current_dir}/APACHE.txt", mode="rt", encoding="utf-8") as af:
     APACHE2 = af.read()
 
-with open("tests/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
+with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
     CHALLENGING = af.read()
 
 
@@ -57,7 +60,7 @@ class TestSimple(unittest.TestCase):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("fa8660bce4fd6ead891a22065375c2615fc6832c", file_hash)
+        self.assertEqual("9c1a36810f95032b176e2b488f781b823a7cb63f", file_hash)
         analysis, match = spdx_matcher.analyse_license_text(APACHE2)
 
         self.assertEqual(len(analysis["licenses"]), 1)
@@ -72,11 +75,11 @@ class TestSimple(unittest.TestCase):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("ea09e167c20dc7c80252f9dd897bb903c14e7f89", file_hash)
+        self.assertEqual("1674274803cb5de9d545a6b42e7396286ee62bd5", file_hash)
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
-        self.assertEqual(len(analysis["licenses"]), 16)
+        self.assertEqual(len(analysis["licenses"]), 24)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
         self.assertTrue("MIT" in analysis["licenses"])
         self.assertTrue("BSD-3-Clause" in analysis["licenses"])
@@ -86,6 +89,14 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-2.0-only" in analysis["licenses"])
         self.assertTrue("GPL-1.0-or-later" in analysis["licenses"])
         self.assertTrue("GPL-1.0-only" in analysis["licenses"])
+
+
+class TestNormalize(unittest.TestCase):
+    def test_space_remove(self):
+        logging.getLogger(__name__).debug("Starting normalize test for specific symbol removal..")
+        source = "space remove for . new start"
+        expected = "space remove for. new start"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
 
 
 if __name__ == "__main__":
