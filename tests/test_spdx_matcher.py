@@ -60,7 +60,7 @@ class TestSimple(unittest.TestCase):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("38e163706d71f5d84323bddec01863eb80dd964a", file_hash)
+        self.assertEqual("9c1a36810f95032b176e2b488f781b823a7cb63f", file_hash)
         analysis, match = spdx_matcher.analyse_license_text(APACHE2)
 
         self.assertEqual(len(analysis["licenses"]), 1)
@@ -75,11 +75,11 @@ class TestSimple(unittest.TestCase):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("4ebe8f733a243ce8d2f48c762d3727516031dfa3", file_hash)
+        self.assertEqual("1674274803cb5de9d545a6b42e7396286ee62bd5", file_hash)
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
-        self.assertEqual(len(analysis["licenses"]), 16)
+        self.assertEqual(len(analysis["licenses"]), 24)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
         self.assertTrue("MIT" in analysis["licenses"])
         self.assertTrue("BSD-3-Clause" in analysis["licenses"])

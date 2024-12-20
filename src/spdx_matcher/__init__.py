@@ -152,7 +152,7 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     # B.11 Copyright notice removal for matching
     if remove_sections & COPYRIGHT_REMOVAL:
         license_text = re.sub(
-            COPYRIGHT_NOTICE_REGEX, "", license_text, flags=re.IGNORECASE
+            COPYRIGHT_NOTICE_REGEX, r"\1", license_text, flags=re.IGNORECASE
         )
 
     # To avoid a possibility of a non-match due to case sensitivity.
@@ -193,7 +193,8 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
 
     # To avoid the possibility of a non-match due to missing space before or after specific symbol
     # including period, comma, question mark, exclamation mark, colon, semicolon.
-    license_text = re.sub(r"\s+([.,!])", r"\1", license_text)
+    license_text = license_text.replace(" .", ".").replace(" ,", ",").replace(" !", "!")
+
     return license_text
 
 
