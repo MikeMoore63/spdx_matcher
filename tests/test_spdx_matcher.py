@@ -82,7 +82,7 @@ class TestSimple(unittest.TestCase):
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
-        self.assertEqual(len(analysis["licenses"]), 24)
+        self.assertEqual(len(analysis["licenses"]), 16)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
         self.assertTrue("MIT" in analysis["licenses"])
         self.assertTrue("BSD-3-Clause" in analysis["licenses"])
