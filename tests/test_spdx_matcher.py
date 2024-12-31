@@ -6,6 +6,7 @@ import hashlib
 import spdx_matcher
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 """
   Copyright 2023 Mike Moore
@@ -52,10 +53,10 @@ with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
 
 class TestSimple(unittest.TestCase):
     def test_apache2(self):
-        logging.getLogger(__name__).debug("Starting normalize of apache2..")
+        logger.debug("Starting normalize of apache2..")
         content = spdx_matcher.normalize(APACHE2,
                                          remove_sections=spdx_matcher.REMOVE_FINGERPRINT)
-        logging.getLogger(__name__).debug("Finished normalize of apache2..")
+        logger.debug("Finished normalize of apache2..")
         if not isinstance(content, bytes):
             content = content.encode("utf-8")
 
@@ -67,10 +68,10 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("Apache-2.0" in analysis["licenses"])
 
     def test_backtracking_challenging(self):
-        logging.getLogger(__name__).debug("Starting normalize of challenging..")
+        logger.debug("Starting normalize of challenging..")
         content = spdx_matcher.normalize(CHALLENGING,
                                          remove_sections=spdx_matcher.REMOVE_FINGERPRINT)
-        logging.getLogger(__name__).debug("Finished normalize of challenging..")
+        logger.debug("Finished normalize of challenging..")
         if not isinstance(content, bytes):
             content = content.encode("utf-8")
 
@@ -93,7 +94,7 @@ class TestSimple(unittest.TestCase):
 
 class TestNormalize(unittest.TestCase):
     def test_space_remove(self):
-        logging.getLogger(__name__).debug("Starting normalize test for specific symbol removal..")
+        logger.debug("Starting normalize test for specific symbol removal..")
         source = "space remove for . new start"
         expected = "space remove for. new start"
         self.assertEqual(expected, spdx_matcher.normalize(source))
