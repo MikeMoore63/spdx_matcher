@@ -50,6 +50,9 @@ with open(f"{current_dir}/APACHE.txt", mode="rt", encoding="utf-8") as af:
 with open(f"{current_dir}/PYTHON-2.0.1.txt", mode="rt", encoding="utf-8") as af:
     PYTHON201 = af.read()
 
+with open(f"{current_dir}/GPL-3.0.txt", mode="rt", encoding="utf-8") as af:
+    GPL30 = af.read()
+
 with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
     CHALLENGING = af.read()
 
@@ -99,7 +102,7 @@ class TestSimple(unittest.TestCase):
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
-        self.assertEqual(len(analysis["licenses"]), 24)
+        self.assertEqual(len(analysis["licenses"]), 16)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
         self.assertTrue("MIT" in analysis["licenses"])
         self.assertTrue("BSD-3-Clause" in analysis["licenses"])
@@ -109,6 +112,12 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-2.0-only" in analysis["licenses"])
         self.assertTrue("GPL-1.0-or-later" in analysis["licenses"])
         self.assertTrue("GPL-1.0-only" in analysis["licenses"])
+
+    def test_deprecated_licenses_not_exists(self):
+        analysis, match = spdx_matcher.analyse_license_text(GPL30)
+        self.assertEqual(len(analysis["licenses"]), 2)
+        self.assertTrue("GPL-3.0" not in analysis["licenses"])
+        self.assertTrue("GPL-3.0-only" in analysis["licenses"] and "GPL-3.0-or-later" in analysis["licenses"])
 
 
 class TestNormalize(unittest.TestCase):
