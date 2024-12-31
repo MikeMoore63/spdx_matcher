@@ -34,8 +34,10 @@ import re
 import time
 import urllib.request
 import logging
-from functools import cache
+from functools import cache, wraps
 from textwrap import wrap
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_PATH = os.path.join(
     os.path.abspath(os.path.dirname(__file__)), "spdxCache.json"
@@ -95,6 +97,12 @@ VARIETAL_WORDS_SPELLING = {
     "non-commercial": "noncommercial",
     "per cent": "percent",
     "owner": "holder",
+}
+
+# Matcher pre- and post-configuration
+MATCHER_POST_LICENSE_REMOVE = {
+    "Python-2.0": ("0BSD", "HPND",),
+    "Python-2.0.1": ("0BSD", "HPND",),
 }
 
 # a data structure to allow template overrides if match does not happen but its important
@@ -626,6 +634,38 @@ def _load_license_analyser_cache():
     return index, match_cache
 
 
+def matcher_poster(func):
+    """
+    Decorator to post process the result from the matcher.
+
+    We should add some additional process for the result, to avoid noise in the result. such as:
+    - Remove some match licenses: License A is a subset of License B, we should remove License A
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        result, match = func(*args, **kwargs)
+        if "licenses" not in result:
+            return result, match
+
+        rm_licenses = set()
+        matcher_licenses = set(result["licenses"].keys())
+        for match_license_id in matcher_licenses:
+            if match_license_id in MATCHER_POST_LICENSE_REMOVE:
+                rm_curr = set(MATCHER_POST_LICENSE_REMOVE[match_license_id])
+                rm_licenses |= rm_curr & matcher_licenses
+
+        if rm_licenses:
+            logger.info("Remove match licenses: %s, according to config MATCHER_POST_LICENSE_REMOVE",
+                        rm_licenses)
+            for rm_license_id in rm_licenses:
+                result["licenses"].pop(rm_license_id)
+        return result, match
+
+    return wrapper
+
+
+@matcher_poster
 def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=None):
     """
     This method uses regexp cache to search for license text.
