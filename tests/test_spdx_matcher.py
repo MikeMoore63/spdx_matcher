@@ -6,6 +6,7 @@ import hashlib
 import spdx_matcher
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 """
   Copyright 2023 Mike Moore
@@ -46,8 +47,14 @@ current_dir = Path(__file__).parent
 with open(f"{current_dir}/APACHE.txt", mode="rt", encoding="utf-8") as af:
     APACHE2 = af.read()
 
+with open(f"{current_dir}/PYTHON-2.0.1.txt", mode="rt", encoding="utf-8") as af:
+    PYTHON201 = af.read()
+
 with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
     CHALLENGING = af.read()
+
+with open(f"{current_dir}/NO-MATCH.txt", mode="rt", encoding="utf-8") as af:
+    NOMATCH = af.read()
 
 
 class TestSimple(unittest.TestCase):
@@ -65,6 +72,19 @@ class TestSimple(unittest.TestCase):
 
         self.assertEqual(len(analysis["licenses"]), 1)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
+
+    def test_post_match_python201(self):
+        logger.debug("Starting analyse of python 2.0.1..")
+        analysis, match = spdx_matcher.analyse_license_text(PYTHON201)
+        self.assertEqual(len(analysis["licenses"]), 1)
+        self.assertEqual(len(analysis["exceptions"]), 0)
+        self.assertTrue("Python-2.0.1" in analysis["licenses"])
+
+    def test_no_match(self):
+        logger.debug("Starting analyse of not match license text..")
+        analysis, match = spdx_matcher.analyse_license_text(NOMATCH)
+        self.assertEqual(len(analysis["licenses"]), 0)
+        self.assertEqual(len(analysis["exceptions"]), 0)
 
     def test_backtracking_challenging(self):
         logging.getLogger(__name__).debug("Starting normalize of challenging..")
