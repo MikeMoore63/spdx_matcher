@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -38,6 +39,8 @@ __all__ = [
     "REMOVE_FINGERPRINT",
     "REMOVE_NONE",
     "analyse_license_text",
+    "similarity_score",
+    "fuzzy_license_text",
 ]
 
 logger = logging.getLogger(__name__)
@@ -278,6 +281,7 @@ def _process_license(license: dict) -> dict:
         return {
             license["licenseId"]: {
                 "name": license["name"],
+                "licenseText": license["licenseText"],
                 "regexpForMatch": license["regexpForMatch"],
                 "matchCost": license["matchCost"] if "matchCost" in license else 100.0,
                 "text_length": len(license["licenseText"]),
@@ -324,6 +328,7 @@ def _process_exception(exception: dict) -> dict:
         return {
             exception["licenseExceptionId"]: {
                 "name": exception["name"],
+                "licenseText": exception["licenseExceptionText"],
                 "regexpForMatch": exception["regexpForMatch"],
                 "matchCost": exception["matchCost"]
                 if "matchCost" in exception
@@ -700,6 +705,34 @@ def _load_license_analyser_cache():
     return index, match_cache
 
 
+def _avoid_license_handler(license_text: str,
+                           avoid_license: list[str] | None = None,
+                           avoid_exceptions: list[str] | None = None) -> tuple[list, list]:
+    """
+    Helper function to handle the avoid_license and avoid_exceptions arguments.
+    """
+    # expensive licenses
+    # avoid if content considered large
+    # regexp has back tracking which is inefficient
+    if avoid_license is None:
+        if len(license_text) > LARGE_CONTENT:
+            avoid_license = [
+                "0BSD",
+                "JSON",
+                "Zlib",
+                "BSD-Source-Code",
+                "BSD-2-Clause",
+                "BSD-2-Clause-Views",
+            ]
+        else:
+            avoid_license = []
+
+    if avoid_exceptions is None:
+        avoid_exceptions = []
+
+    return avoid_license, avoid_exceptions
+
+
 def matcher_poster(func):
     """
     Decorator to post process the result from the matcher.
@@ -740,25 +773,7 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
     Starts with license then does exceptions.
     """
     index, match_cache = _load_license_analyser_cache()
-
-    # expensive licenses
-    # avoid if content considered large
-    # regexp has back tracking which is inefficient
-    if avoid_license is None:
-        if len(original_content) > LARGE_CONTENT:
-            avoid_license = [
-                "0BSD",
-                "JSON",
-                "Zlib",
-                "BSD-Source-Code",
-                "BSD-2-Clause",
-                "BSD-2-Clause-Views",
-            ]
-        else:
-            avoid_license = []
-
-    if avoid_exceptions is None:
-        avoid_exceptions = []
+    avoid_license, avoid_exceptions = _avoid_license_handler(original_content, avoid_license, avoid_exceptions)
 
     analysed_length = 0
 
@@ -799,6 +814,102 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
             return analysis, 1.0
 
     return analysis, analysed_length / len(original_content)
+
+
+def _similarity_pre_check(normalized_license: str, license_data: dict, threshold: float) -> bool:
+    """
+    Pre-check the similarity between the normalized license text and the license data using fingerprint.
+
+    :param normalized_license: Normalized license text.
+    :param license_data: License data in cache data.
+    :param threshold: Threshold value about the max number of fingerprints that can not match. The result is
+        not 100% correct, but it helps a lot for better performance.
+    """
+    if threshold < 0 or threshold > 1:
+        raise ValueError("Threshold value should be between 0 and 1")
+
+    start_find = 0
+    fp_not_match = 0
+    finger_prints = license_data["regexpForMatch"]["finger_prints"]
+    max_nomatch_finger_prints = math.ceil(len(finger_prints) * (1 - threshold))
+
+    for finger_print in finger_prints:
+        index = normalized_license.find(finger_print, start_find)
+        if index >= 0:
+            start_find = index + len(finger_print)
+        else:
+            fp_not_match += 1
+            if fp_not_match > max_nomatch_finger_prints:
+                logger.debug("Fail fingerprint check, %s not match fingerprint number is %d greater"
+                             "than max not match %d according the threshold, skip the result",
+                             license_data["name"], fp_not_match, max_nomatch_finger_prints)
+                return False
+    return True
+
+
+def similarity_score(standard: str, check: str) -> float:
+    """
+    Returns the similarity score between two strings using jellyfish jaro similarity.
+
+    :param standard: The standard license text from spdx license text.
+    :param check: The license text to check for similarity.
+    """
+    try:
+        import jellyfish
+    except ImportError:
+        raise ImportError("Dependency jellyfish is required for similarity_score, "
+                          "please install `spdx_matcher[fuzzy]`")
+
+    normalize_standard = normalize(standard, remove_sections=REMOVE_NONE)
+    return jellyfish.jaro_similarity(normalize_standard, check)
+
+
+def fuzzy_license_text(original_content: str, threshold: float, avoid_license=None, avoid_exceptions=None):
+    """
+    This method uses regexp cache and jellyfish.jaro_similarity to search for license text.
+    It first uses fingerprint to filter and make it faster, than use jellyfish.jaro_similarity to calculate
+    the similarity score between the standard license text and input license text.
+    It keeps looking for all the cache data, both license and exception.
+
+    :param original_content: License text to check for similarity.
+    :param threshold: Threshold value filter the similarity score. Only return the score if the result greater
+        than the threshold.
+    :param avoid_license: List of license id to avoid.
+    :param avoid_exceptions: List of exception id to avoid.
+    """
+    index, match_cache = _load_license_analyser_cache()
+    avoid_license, avoid_exceptions = _avoid_license_handler(original_content, avoid_license, avoid_exceptions)
+
+    result = []
+    normalized_license = normalize(original_content, remove_sections=REMOVE_NONE)
+    for license_id in index["licenses"]:
+        if license_id in avoid_license:
+            continue
+        to_process = match_cache["licenses"][license_id]
+        if not _similarity_pre_check(normalized_license, to_process, threshold):
+            continue
+        jaro_score = similarity_score(to_process["licenseText"], normalized_license)
+        if jaro_score < threshold:
+            logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                         license_id, jaro_score, threshold)
+            continue
+        result.append({"type": "license", "id": license_id, "score": jaro_score})
+
+    for license_exception_id in index["exceptions"]:
+        if license_exception_id in avoid_exceptions:
+            continue
+        to_process = match_cache["exceptions"][license_exception_id]
+        if not _similarity_pre_check(normalized_license, to_process, threshold):
+            continue
+        jaro_score = similarity_score(to_process["licenseText"], normalized_license)
+        if jaro_score < threshold:
+            logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                         license_exception_id, jaro_score, threshold)
+            continue
+        result.append({"type": "exception", "id": license_exception_id, "score": jaro_score})
+
+    result.sort(key=lambda x: x["score"], reverse=True)
+    return result
 
 
 # to help with local devugging of cache builder
