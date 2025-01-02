@@ -38,6 +38,8 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from textwrap import wrap
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_CACHE_PATH = os.path.join(
     os.path.abspath(os.path.dirname(__file__)), "spdxCache.json"
 )
@@ -50,7 +52,7 @@ URL_REGEX = (
 COPYRIGHT_NOTICE_REGEX = r"((?<=\n)|.*)Copyright.*(?=\n|$)|Copyright.*\\n"
 COPYRIGHT_SYMBOLS = r"[©Ⓒⓒ]"
 BULLETS_NUMBERING_REGEX = (
-    r"\s(([0-9a-z]\.\s)+|(\([0-9a-z]\)\s)+|(\*\s)+)|(\s\([i]+\)\s)"
+    r"\s(([0-9a-z]\.\s)+|(\([0-9a-z]\)\s)+|(\*\s(?![-=]))+)|(\s\([i]+\)\s)"
 )
 COMMENTS_REGEX = r"(\/\/|\/\*|#) +.*"
 EXTRANEOUS_REGEX = r"(?is)\s*end of terms and conditions.*"
@@ -184,6 +186,7 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
 
     # To avoid the possibility of a non-match due to variations of bullets, numbers, letter,
     # or no bullets used are simply removed.
+    # while re.search(BULLETS_NUMBERING_REGEX, license_text):
     license_text = re.sub(BULLETS_NUMBERING_REGEX, " ", license_text)
 
     # To avoid the possibility of a non-match due to the same word being spelled differently.
@@ -201,12 +204,12 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     return license_text
 
 
-def _fetch_json(url, timeout=10):
+def _fetch_json(url: str, timeout: int | None = 10):
     with urllib.request.urlopen(url, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _process_license(license, match_cache):
+def _process_license(license: dict, match_cache: dict):
     if "detailsUrl" in license:
         json_detail_data = _fetch_json(license["detailsUrl"])
         json_detail_data.pop("licenseTextHtml", None)
@@ -275,7 +278,7 @@ def _process_license(license, match_cache):
         }
 
 
-def _process_exception(exception, match_cache):
+def _process_exception(exception: dict, match_cache: dict):
     if "detailsUrl" in exception:
         json_detail_data = _fetch_json(exception["detailsUrl"])
         if "licenseExceptionTemplate" in json_detail_data:
@@ -321,7 +324,41 @@ def _process_exception(exception, match_cache):
         }
 
 
-def cache_builder():
+def _merge_cache_data_match_cost(cache_file: str, match_cache: dict) -> None:
+    """
+    Merge attribute `matchCost` in cache data file to dict match_cache. to reduce the git diff.
+
+    :param cache_file: The path of the cache file
+    :param match_cache: The dict of match_cache
+    """
+    cache_data_match_cost = {"licenses": {}, "exceptions": {}}
+    with open(cache_file, "r", encoding="utf-8") as cf:
+        cache_data = json.load(cf)
+        cache_data_match_cost["licenses"] = {
+            license_id: license_data["matchCost"]
+            for license_id, license_data in cache_data["licenses"].items()
+        }
+        cache_data_match_cost["exceptions"] = {
+            license_exception_id: exception_data["matchCost"]
+            for license_exception_id, exception_data in cache_data["exceptions"].items()
+        }
+
+    for license_id, license_data in match_cache["licenses"].items():
+        if license_id in cache_data_match_cost["licenses"]:
+            license_data["matchCost"] = cache_data_match_cost["licenses"][license_id]
+    for license_exception_id, exception_data in match_cache["exceptions"].items():
+        if license_exception_id in cache_data_match_cost["exceptions"]:
+            exception_data["matchCost"] = cache_data_match_cost["exceptions"][license_exception_id]
+
+
+def cache_builder(change_match_cost: bool | None = True):
+    """
+    Builds the cache file base on spdx licenses and exceptions json files
+
+    :param change_match_cost: Whether change attribute `matchCost` in cache data file, use to reduce the diff
+        of git commit, Will use the realtime match cost for current runtime if True, otherwise will use
+        previous match cost in the cache data file. Default is True.
+    """
     match_cache = {"licenses": {}, "exceptions": {}}
     base_url = "https://spdx.org/licenses"
 
@@ -339,8 +376,13 @@ def cache_builder():
         for exception in exceptions_data["exceptions"]:
             executor.submit(_process_exception, exception, match_cache)
 
-    # Save match_cache to a file
     cache_file = os.getenv("SPDX_MATCHER_CACHE_FILE", DEFAULT_CACHE_PATH)
+    if not change_match_cost:
+        logger.info("Not changing the match cost in the cache data file, due to parameter "
+                    "`change_match_cost` is False")
+        _merge_cache_data_match_cost(cache_file, match_cache)
+
+    # Save match_cache to a file
     with open(cache_file, "w", encoding="utf-8") as cf:
         # Sort the licenses and exceptions by licenseId/licenseExceptionId for easier maintenance
         match_cache["licenses"] = dict(sorted(match_cache["licenses"].items()))
@@ -709,4 +751,6 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
 
 # to help with local devugging of cache builder
 if __name__ == "__main__":
-    cache_builder()
+    start = time.perf_counter()
+    cache_builder(change_match_cost=False)
+    print(f"Time taken to build cache: {time.perf_counter() - start}")

@@ -1,4 +1,14 @@
+# spdx_matcher
+
 The spdx_matcher module is a tool to help detect licenses from text files.
+
+## Installation
+
+```bash
+pip install spdx_matcher
+```
+
+## Usage
 
 Simple use is
 
@@ -237,8 +247,6 @@ print(f"{_store_content.cache_info()}")
 
 This package does contain data from SPDX which is release under the [Creative Commons Attribution 3.0](https://spdx.org/licenses/CC-BY-3.0] Unported) or CC-BY-3.0 license.
 
+## Contributing
 
-
-
-
- 
+If you want to rebuild the cache data but do not want to have so many git diff in the path, set `change_match_cost=False` when you call method `cache_builder`

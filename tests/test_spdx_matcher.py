@@ -49,6 +49,9 @@ with open(f"{current_dir}/APACHE.txt", mode="rt", encoding="utf-8") as af:
 with open(f"{current_dir}/GPL-3.0.txt", mode="rt", encoding="utf-8") as af:
     GPL30 = af.read()
 
+with open(f"{current_dir}/MPL-2.0.txt", mode="rt", encoding="utf-8") as af:
+    MPL20 = af.read()
+
 with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
     CHALLENGING = af.read()
 
@@ -69,6 +72,17 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(len(analysis["licenses"]), 1)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
 
+    def test_mpl20(self):
+        # cache data matchConfidence equal to 1.0
+        # index, match_cache = spdx_matcher._load_license_analyser_cache()
+        # self.assertEqual(2, len([i for i in ["MPL-2.0", "MPL-2.0-no-copyleft-exception"] if i in match_cache]))
+        # self.assertTrue(match_cache["licenses"]["MPL-2.0"]["matchConfidence"] == 1.0)
+        # self.assertTrue(match_cache["licenses"]["MPL-2.0-no-copyleft-exception"]["matchConfidence"] == 1.0)
+
+        analysis, match = spdx_matcher.analyse_license_text(MPL20)
+        self.assertEqual(len(analysis["licenses"]), 1)
+        self.assertTrue("MPL-2.0" in analysis["licenses"])
+
     def test_backtracking_challenging(self):
         logging.getLogger(__name__).debug("Starting normalize of challenging..")
         content = spdx_matcher.normalize(CHALLENGING,
@@ -78,7 +92,7 @@ class TestSimple(unittest.TestCase):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("1674274803cb5de9d545a6b42e7396286ee62bd5", file_hash)
+        self.assertEqual("4727f956620107e0fcb1451a07e3221190422c7f", file_hash)
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
@@ -105,6 +119,28 @@ class TestNormalize(unittest.TestCase):
         logging.getLogger(__name__).debug("Starting normalize test for specific symbol removal..")
         source = "space remove for . new start"
         expected = "space remove for. new start"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+    def test_bullet_should_keep(self):
+        """
+        Not all bullet points should be removed, some license like MPL use bullet points as part of the
+        license text regexp
+        """
+        # original test to make sure behavior not change
+        source = "******\n\n 6. Disclaimer of Warranty\n\n* abc *"
+        expected = "****** disclaimer of warranty abc *"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+        source = "******\n\n 6. Disclaimer of Warranty\n\n* ------ *"
+        expected = "****** disclaimer of warranty * ------ *"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+        source = "******\n\n 6. Disclaimer of Warranty\n\n* ====== *"
+        expected = "****** disclaimer of warranty * ====== *"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+        source = "*******\n*  *\n*  6. Disclaimer of Warranty  *\n*  ------  *"
+        expected = "******* disclaimer of warranty * ------ *"
         self.assertEqual(expected, spdx_matcher.normalize(source))
 
 
