@@ -137,7 +137,6 @@ class TestSimple(unittest.TestCase):
         self.assertTrue(spdx_matcher.__version__ is not None)
 
 
-
 class TestNormalize(unittest.TestCase):
     def test_space_remove(self):
         logging.getLogger(__name__).debug("Starting normalize test for specific symbol removal..")
