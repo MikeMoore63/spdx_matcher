@@ -16,6 +16,18 @@
    limitations under the License.
 """
 
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+import urllib.request
+import logging
+from concurrent.futures import ThreadPoolExecutor, wait
+from functools import cache, wraps
+from textwrap import wrap
+
 __all__ = [
     "__version__",
     "normalize",
@@ -28,20 +40,13 @@ __all__ = [
     "analyse_license_text",
 ]
 
-import json
-import os
-import re
-import time
-import urllib.request
-import logging
-from functools import cache, wraps
-from textwrap import wrap
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_PATH = os.path.join(
     os.path.abspath(os.path.dirname(__file__)), "spdxCache.json"
 )
+
+DEFAULT_CACHE_THREAD_POOL_WORKERS = int(os.environ.get("SPDX_MATCHER_CACHE_THREAD_POOL_WORKERS", 10))
 
 URL_REGEX = (
     r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
@@ -206,130 +211,118 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     return license_text
 
 
-def cache_builder():
-    """
-    Generates cache file and writes to location of environment
-    """
+def _fetch_json(url: str, timeout=10) -> dict:
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 
-    match_cache = {"licenses": {}, "exceptions": {}}
 
-    with urllib.request.urlopen(
-        "https://spdx.org/licenses/licenses.json", timeout=10
-    ) as f:
-        json_list_data = json.loads(f.read().decode("utf-8"))
+def _process_license(license: dict) -> dict:
+    if "detailsUrl" in license:
+        json_detail_data = _fetch_json(license["detailsUrl"])
+        json_detail_data.pop("licenseTextHtml", None)
+        json_detail_data.pop("standardLicenseHeaderHtml", None)
+        if "standardLicenseTemplate" in json_detail_data:
+            json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
+                json_detail_data["standardLicenseTemplate"]
+            )
 
-    # capture license data
-    # LICENSE_STRINGS_TO_NORMALISE we look to generate this in this
-
-    for license in json_list_data["licenses"]:
-        if "detailsUrl" in license:
-            with urllib.request.urlopen(license["detailsUrl"], timeout=10) as f:
-                json_detail_data = json.loads(f.read().decode("utf-8"))
-                json_detail_data.pop("licenseTextHtml", None)
-                json_detail_data.pop("standardLicenseHeaderHtml", None)
-                if "standardLicenseTemplate" in json_detail_data:
-                    json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
-                        json_detail_data["standardLicenseTemplate"]
-                    )
-
-                if "licenseText" in json_detail_data:
-                    if "regexpForMatch" in json_detail_data:
-                        start_time = time.time()
-                        match, license_data, full_match = _license_regexps_match(
-                            json_detail_data["regexpForMatch"],
-                            json_detail_data["licenseText"],
-                            fast_exit=False,
-                        )
-                        execution_time = time.time() - start_time
-                        json_detail_data["matchCost"] = execution_time
-                        json_detail_data["matchConfidence"] = match
-                        if match < 0.99 and license["licenseId"] in TEMPLATE_OVERRIDE:
-                            print(
-                                f"Unable to match {match} full_match:{full_match}  exmplar text "
-                                f"to regexp for license {json_detail_data['licenseId']}  "
-                                f"license_data {json.dumps(license_data)} time {execution_time} "
-                                f"but we have override testing override"
-                            )
-                            json_detail_data[
-                                "regexpForMatch"
-                            ] = _convert_template_to_regexp(
-                                TEMPLATE_OVERRIDE[license["licenseId"]]
-                            )
-                            start_time = time.time()
-                            match, license_data, full_match = _license_regexps_match(
-                                json_detail_data["regexpForMatch"],
-                                json_detail_data["licenseText"],
-                                fast_exit=False,
-                            )
-                            execution_time = time.time() - start_time
-                            json_detail_data["matchCost"] = execution_time
-                            json_detail_data["matchConfidence"] = match
-
-                        if match < 0.99:
-                            print(
-                                f"Unable to match {match} full_match:{full_match}  exmplar "
-                                f"text to regexp for license {json_detail_data['licenseId']}  "
-                                f"license_data {json.dumps(license_data)} time {execution_time}"
-                            )
-                        else:
-                            print(
-                                f"Success to match and full_match:{full_match} exmplar text "
-                                f"to regexp for license {json_detail_data['licenseId']} "
-                                f"license_data {json.dumps(license_data)} time {execution_time}"
-                            )
-
-            for k in json_detail_data:
-                if k not in license:
-                    license[k] = json_detail_data[k]
-            match_cache["licenses"][license["licenseId"]] = {
-                "name": license["name"],
-                "regexpForMatch": license["regexpForMatch"],
-                "matchCost": license["matchCost"] if "matchCost" in license else 100.0,
-                "text_length": len(license["licenseText"]),
-                "matchConfidence": license["matchConfidence"],
-            }
-
-    base_url = "https://spdx.org/licenses"
-    with urllib.request.urlopen(f"{base_url}/exceptions.json", timeout=10) as f:
-        json_list_data = json.loads(f.read().decode("utf-8"))
-
-    for exception in json_list_data["exceptions"]:
-        if "reference" in exception:
-            url = exception["reference"].replace(".", base_url, 1)
-            with urllib.request.urlopen(url, timeout=10) as f:
-                json_detail_data = json.loads(f.read().decode("utf-8"))
-            if "licenseExceptionTemplate" in json_detail_data:
-                json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
-                    json_detail_data["licenseExceptionTemplate"]
+        if "licenseText" in json_detail_data:
+            if "regexpForMatch" in json_detail_data:
+                start_time = time.time()
+                match, license_data, full_match = _license_regexps_match(
+                    json_detail_data["regexpForMatch"],
+                    json_detail_data["licenseText"],
+                    fast_exit=False,
                 )
-            if "licenseExceptionText" in json_detail_data:
-                if "regexpForMatch" in json_detail_data:
+                execution_time = time.time() - start_time
+                json_detail_data["matchCost"] = execution_time
+                json_detail_data["matchConfidence"] = match
+                if match < 0.99 and license["licenseId"] in TEMPLATE_OVERRIDE:
+                    print(
+                        f"Unable to match {match} full_match:{full_match}  exmplar text "
+                        f"to regexp for license {json_detail_data['licenseId']}  "
+                        f"license_data {json.dumps(license_data)} time {execution_time} "
+                        f"but we have override testing override"
+                    )
+                    json_detail_data[
+                        "regexpForMatch"
+                    ] = _convert_template_to_regexp(
+                        TEMPLATE_OVERRIDE[license["licenseId"]]
+                    )
                     start_time = time.time()
                     match, license_data, full_match = _license_regexps_match(
                         json_detail_data["regexpForMatch"],
-                        json_detail_data["licenseExceptionText"],
+                        json_detail_data["licenseText"],
                         fast_exit=False,
                     )
                     execution_time = time.time() - start_time
                     json_detail_data["matchCost"] = execution_time
                     json_detail_data["matchConfidence"] = match
-                    if match < 0.99:
-                        print(
-                            f"Unable to match {match} full_match:{full_match}  exmplar text "
-                            f"to regexp for exception "
-                            f"{json_detail_data['licenseExceptionId']}  "
-                            f"license_data {json.dumps(license_data)} time {execution_time}"
-                        )
-                    else:
-                        print(
-                            f"Success to match and full_match:{full_match} exmplar text to "
-                            f"regexp for exception {json_detail_data['licenseExceptionId']} "
-                            f"license_data {json.dumps(license_data)} time {execution_time}"
-                        )
-            for k in json_detail_data:
-                if k not in exception:
-                    exception[k] = json_detail_data[k]
-            match_cache["exceptions"][exception["licenseExceptionId"]] = {
+
+                if match < 0.99:
+                    print(
+                        f"Unable to match {match} full_match:{full_match}  exmplar "
+                        f"text to regexp for license {json_detail_data['licenseId']}  "
+                        f"license_data {json.dumps(license_data)} time {execution_time}"
+                    )
+                else:
+                    print(
+                        f"Success to match and full_match:{full_match} exmplar text "
+                        f"to regexp for license {json_detail_data['licenseId']} "
+                        f"license_data {json.dumps(license_data)} time {execution_time}"
+                    )
+
+        for k in json_detail_data:
+            if k not in license:
+                license[k] = json_detail_data[k]
+        return {
+            license["licenseId"]: {
+                "name": license["name"],
+                "regexpForMatch": license["regexpForMatch"],
+                "matchCost": license["matchCost"] if "matchCost" in license else 100.0,
+                "text_length": len(license["licenseText"]),
+                "matchConfidence": license["matchConfidence"],
+                "isDeprecatedLicenseId": license["isDeprecatedLicenseId"],
+            }
+        }
+
+
+def _process_exception(exception: dict) -> dict:
+    if "detailsUrl" in exception:
+        json_detail_data = _fetch_json(exception["detailsUrl"])
+        if "licenseExceptionTemplate" in json_detail_data:
+            json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
+                json_detail_data["licenseExceptionTemplate"]
+            )
+        if "licenseExceptionText" in json_detail_data:
+            if "regexpForMatch" in json_detail_data:
+                start_time = time.time()
+                match, license_data, full_match = _license_regexps_match(
+                    json_detail_data["regexpForMatch"],
+                    json_detail_data["licenseExceptionText"],
+                    fast_exit=False,
+                )
+                execution_time = time.time() - start_time
+                json_detail_data["matchCost"] = execution_time
+                json_detail_data["matchConfidence"] = match
+                if match < 0.99:
+                    print(
+                        f"Unable to match {match} full_match:{full_match}  exmplar text "
+                        f"to regexp for exception "
+                        f"{json_detail_data['licenseExceptionId']}  "
+                        f"license_data {json.dumps(license_data)} time {execution_time}"
+                    )
+                else:
+                    print(
+                        f"Success to match and full_match:{full_match} exmplar text to "
+                        f"regexp for exception {json_detail_data['licenseExceptionId']} "
+                        f"license_data {json.dumps(license_data)} time {execution_time}"
+                    )
+        for k in json_detail_data:
+            if k not in exception:
+                exception[k] = json_detail_data[k]
+        return {
+            exception["licenseExceptionId"]: {
                 "name": exception["name"],
                 "regexpForMatch": exception["regexpForMatch"],
                 "matchCost": exception["matchCost"]
@@ -337,11 +330,84 @@ def cache_builder():
                 else 100.0,
                 "text_length": len(exception["licenseExceptionText"]),
                 "matchConfidence": exception["matchConfidence"],
+                "isDeprecatedLicenseId": exception["isDeprecatedLicenseId"],
             }
+        }
 
-        cache_file = os.getenv("SPDX_MATCHER_CACHE_FILE", DEFAULT_CACHE_PATH)
-        with open(cache_file, "wt", encoding="utf-8") as cf:
-            cf.write(json.dumps(match_cache, indent=4))
+
+def _merge_cache_data_match_cost(cache_file: str, match_cache: dict) -> None:
+    """
+    Merge attribute `matchCost` in cache data file to dict match_cache. to reduce the git diff.
+
+    :param cache_file: The path of the cache file
+    :param match_cache: The dict of match_cache
+    """
+    cache_data_match_cost = {"licenses": {}, "exceptions": {}}
+    with open(cache_file, "r", encoding="utf-8") as cf:
+        cache_data = json.load(cf)
+        cache_data_match_cost["licenses"] = {
+            license_id: license_data["matchCost"]
+            for license_id, license_data in cache_data["licenses"].items()
+        }
+        cache_data_match_cost["exceptions"] = {
+            license_exception_id: exception_data["matchCost"]
+            for license_exception_id, exception_data in cache_data["exceptions"].items()
+        }
+
+    for license_id, license_data in match_cache["licenses"].items():
+        if license_id in cache_data_match_cost["licenses"]:
+            license_data["matchCost"] = cache_data_match_cost["licenses"][license_id]
+    for license_exception_id, exception_data in match_cache["exceptions"].items():
+        if license_exception_id in cache_data_match_cost["exceptions"]:
+            exception_data["matchCost"] = cache_data_match_cost["exceptions"][license_exception_id]
+
+
+def cache_builder(change_match_cost: bool | None = True) -> None:
+    """
+    Builds the cache file base on spdx licenses and exceptions json files
+
+    :param change_match_cost: Whether change attribute `matchCost` in cache data file, use to reduce the diff
+        of git commit, Will use the realtime match cost for current runtime if True, otherwise will use
+        previous match cost in the cache data file. Default is True.
+    """
+    match_cache = {"licenses": {}, "exceptions": {}}
+    base_url = "https://spdx.org/licenses"
+
+    # Fetch licenses.json
+    licenses_data = _fetch_json(f"{base_url}/licenses.json")
+    exceptions_data = _fetch_json(f"{base_url}/exceptions.json")
+
+    # Process licenses and exceptions using ThreadPoolExecutor
+    licenses = []
+    exceptions = []
+    with ThreadPoolExecutor(max_workers=DEFAULT_CACHE_THREAD_POOL_WORKERS) as executor:
+        # Process licenses concurrently
+        for license in licenses_data["licenses"]:
+            licenses.append(executor.submit(_process_license, license))
+
+        # Process exceptions concurrently
+        for exception in exceptions_data["exceptions"]:
+            exceptions.append(executor.submit(_process_exception, exception))
+
+    wait(licenses)
+    wait(exceptions)
+    for license in licenses:
+        match_cache["licenses"].update(license.result())
+    for exception in exceptions:
+        match_cache["exceptions"].update(exception.result())
+
+    cache_file = os.getenv("SPDX_MATCHER_CACHE_FILE", DEFAULT_CACHE_PATH)
+    if not change_match_cost:
+        logger.info("Not changing the match cost in the cache data file, due to parameter "
+                    "`change_match_cost` is False")
+        _merge_cache_data_match_cost(cache_file, match_cache)
+
+    # Save match_cache to a file
+    with open(cache_file, "w", encoding="utf-8") as cf:
+        # Sort the licenses and exceptions by licenseId/licenseExceptionId for easier maintenance
+        match_cache["licenses"] = dict(sorted(match_cache["licenses"].items()))
+        match_cache["exceptions"] = dict(sorted(match_cache["exceptions"].items()))
+        json.dump(match_cache, cf, indent=4)
 
 
 def _convert_template_to_regexp(template):
@@ -612,7 +678,7 @@ def _load_license_analyser_cache():
     licenses_to_use = [
         {"id": k} | v
         for k, v in match_cache["licenses"].items()
-        if v["matchConfidence"] == 1.0 and k not in popular_license
+        if v["matchConfidence"] == 1.0 and not v["isDeprecatedLicenseId"] and k not in popular_license
     ]
     license_to_use = [
         license["id"]
@@ -623,7 +689,7 @@ def _load_license_analyser_cache():
     exceptions_to_use = [
         {"id": k} | v
         for k, v in match_cache["exceptions"].items()
-        if v["matchConfidence"] == 1.0
+        if v["matchConfidence"] == 1.0 and not v["isDeprecatedLicenseId"]
     ]
     exceptions_to_use = [
         exception["id"]
@@ -737,4 +803,4 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
 
 # to help with local devugging of cache builder
 if __name__ == "__main__":
-    cache_builder()
+    cache_builder(change_match_cost=True)
