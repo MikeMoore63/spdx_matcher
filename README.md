@@ -128,9 +128,10 @@ import logging
 import sys
 import threading
 
+logger = logging.getLogger(__name__)
 if not logging.getLogger().hasHandlers():
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
-logging.getLogger(__name__).setLevel(logging.INFO)
+logging.basicConfig(level=logging.INFO)
 
 # a rough filter for files to process
 LICENSE_RE = r'^.*LICENSE$|^.*LICENSE.*\.(?!(exe|dll|go|c|h|py|pyc|rb|sh|sql|jsonl)$)([^.]+$)'
@@ -246,15 +247,15 @@ def _store_content(blob_name, ecosystem, mime_type, match=False):
     try:
         blob = storage.Blob(bucket=bucket, name=blob_path_name)
         if blob.exists(sc):
-            logging.getLogger(__name__).debug(f"Checked object exists {blob_path_name}")
+            logger.debug(f"Checked object exists {blob_path_name}")
             return blob_name, output
         # 7 days thisstuff is not intended to change
         # so provide hints to cloud storage to maximise this
         blob.cache_control = "max-age=604800"
         blob.upload_from_string(blob_content, content_type=mime_type)
-        logging.getLogger(__name__).info(f"Stored object {blob_path_name}")
+        logger.info(f"Stored object {blob_path_name}")
     except exceptions.GoogleCloudError:
-        logging.getLogger(__name__).exception(f"Unable to store object {blob_path_name}")
+        logger.exception(f"Unable to store object {blob_path_name}")
     return blob_name, output
 
 # gen_license_input("spdxLic.jsonl", "spdxLicExceptions.jsonl", "spdxCache.json")

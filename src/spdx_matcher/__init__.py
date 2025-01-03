@@ -31,7 +31,6 @@ from textwrap import wrap
 from importlib.metadata import version
 
 __all__ = [
-    "__version__",
     "normalize",
     "LICENSE_HEADER_REMOVAL",
     "COPYRIGHT_REMOVAL",
@@ -45,6 +44,8 @@ __all__ = [
 ]
 
 __version__ = version("spdx_matcher")
+logger = logging.getLogger(__name__)
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_PATH = os.path.join(
@@ -605,7 +606,7 @@ def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
     for item_num, initial_match in enumerate(
         re.finditer(initial_regexp, normalized_all_license, flags=re.IGNORECASE)
     ):
-        logging.getLogger(__name__).debug(f"iterating regexp {item_num}")
+        logger.debug(f"iterating regexp {item_num}")
         normalized_license = normalized_all_license[initial_match.end() :]
         matches = 1
         non_matches = 0
@@ -785,13 +786,13 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
         if id in avoid_license:
             continue
         to_process = match_cache["licenses"][id]
-        logging.getLogger(__name__).debug(f"processing license {id}")
+        logger.debug(f"processing license {id}")
         match, license_data, full_match = _license_regexps_match(
             to_process["regexpForMatch"], original_content, fast_exit=True
         )
 
         if match == 1.0:
-            logging.getLogger(__name__).debug(f"matched license {id}")
+            logger.debug(f"matched license {id}")
             analysed_length += to_process["text_length"]
             analysis["licenses"][id] = license_data
 
@@ -803,7 +804,7 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
         if id in avoid_exceptions:
             continue
         to_process = match_cache["exceptions"][id]
-        logging.getLogger(__name__).debug(f"processing exceptions {id}")
+        logger.debug(f"processing exceptions {id}")
         match, license_data, full_match = _license_regexps_match(
             to_process["regexpForMatch"], original_content, fast_exit=True
         )
