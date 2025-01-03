@@ -6,6 +6,7 @@ import hashlib
 import spdx_matcher
 from pathlib import Path
 
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 """
@@ -118,6 +119,9 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(len(analysis["licenses"]), 2)
         self.assertTrue("GPL-3.0" not in analysis["licenses"])
         self.assertTrue("GPL-3.0-only" in analysis["licenses"] and "GPL-3.0-or-later" in analysis["licenses"])
+
+    def test_version(self):
+        self.assertTrue(spdx_matcher.__version__ is not None)
 
 
 class TestNormalize(unittest.TestCase):
