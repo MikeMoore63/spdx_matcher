@@ -27,6 +27,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, wait
 from functools import cache, wraps
 from textwrap import wrap
+from importlib.metadata import version
 
 __all__ = [
     "__version__",
@@ -40,6 +41,7 @@ __all__ = [
     "analyse_license_text",
 ]
 
+__version__ = version("spdx_matcher")
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_PATH = os.path.join(
