@@ -7,6 +7,7 @@ import hashlib
 import spdx_matcher
 from pathlib import Path
 
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 """
@@ -131,6 +132,10 @@ class TestSimple(unittest.TestCase):
         result = spdx_matcher.fuzzy_license_text(test_case, threshold=0.95)
         self.assertNotEqual(len(result), 0)
         self.assertTrue("Apache-2.0" in [match_license["id"] for match_license in result])
+
+    def test_version(self):
+        self.assertTrue(spdx_matcher.__version__ is not None)
+
 
 
 class TestNormalize(unittest.TestCase):
