@@ -1,15 +1,27 @@
+# spdx_matcher
+
 The spdx_matcher module is a tool to help detect licenses from text files.
 
-Simple use is
+## Installation
+
+```bash
+pip install spdx_matcher
+```
+
+## Usage
+
+### Exact Match
+
+You have a license file named `LICENSE.txt` and you want to detect the license from the file. The simple
+use is:
 
 ```python
 import spdx_matcher
 
 with open("LICENSE.txt") as myf:
-    license_text = f.read()
+    license_text = myf.read()
 
 licenses_detected, percent = spdx_matcher.analyse_license_text(license_text)
-
 ```
 
 The license returned from operator is a simple dictionary of form;
@@ -33,12 +45,60 @@ The license returned from operator is a simple dictionary of form;
 
 Where data is the named attributes in the [spdx template license specification](https://spdx.github.io/spdx-spec/v2.2.2/license-matching-guidelines-and-templates/) for sections named "var" and uses the names as defined in the template.
 
+### Fuzzy Match
+
+The above code is for exact match, which only match the license text exactly with cache fingerprint fetch from
+[spdx license](https://github.com/spdx/license-list-data/tree/main/json). Sometime license text may not be
+exactly match, and you still want to detect the license from the text. For this case, you can use fuzzy match
+
+An extra dependency is required for fuzzy matching. Install it before using fuzzy match:
+
+```bash
+pip install spdx_matcher[fuzzy]
+```
+
+And the fuzzy code as below:
+
+```python
+import spdx_matcher
+
+with open("LICENSE.txt") as myf:
+    license_text = myf.read()
+
+fuzzy_result = spdx_matcher.fuzzy_license_text(license_text)
+```
+
+The result of fuzzy match is different from exact match. The result is a list of dictionary, each dictionary
+contains the license and the percentage of match result.
+
+```json
+[
+  {
+    "id": "<spdx license id>",
+    "type": "license",
+    "score": 0.91
+  },
+  {
+    "id": "<spdx license id>",
+    "type": "license",
+    "score": 0.83
+  },
+  ...
+]
+```
+
+## Methods
+
 The matcher object has a number of other useful functions;
 
 | Method         | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Aruments                                                                                                                                                                                                    | Returns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | normalize      | Provides means to take raw text and to make it usefule for matching or hashing purposes. Its main behavior is defined from [spdx matching specification](https://spdx.github.io/spdx-spec/v2.2.2/license-matching-guidelines-and-templates/). At the core it runs through all the basics of normalising i.e.<br/>* lowercse<br/>* change white spaces to single spaces<br/>* normalizes copyright<br/>* normalizes urls<br/>* applies varietal words from spx list<br/>* normalizes quotes to single quote<br/>* normalizes - or dashes<br/>* removes bullets/numbering <br/>In addition via flags you can optionally apply<br/><br/>spdx_matcher.LICENSE_HEADER_REMOVAL if set in remove_sections would remove LICENSE HEADER<br/><br/>spdx_matcher.COPYRIGHT_REMOVAL when this flag is set lines featuring word "copyright" are removed.<br/><br/>spdx_matcher.APPENDIX_ADDENDUM_REMOVAL any text with 'Appendix','Addendum','Exhibit' 'Appendum' is removed. <br/><br/>spdxmatcher.REMOVE_NONE normalises but does not remove any of sections previously.<br/><br/>spdx_matcher.REMOVE_FINGERPRINT = LICENSE_HEADER_REMOVAL &#124; COPYRIGHT_REMOVAL  this is intended to allow rapid hash matching of license texts as it just removes copyright which is unique to who produced license and license header. <br/><br/>To allow license comparison you may want to use these flags in various ways depending on context. Its also worth noting that for license matching none should be removed. The flags can be '&amp;' together to change behavior | license_text - The input text that requires normalizing.<br/> remove_sections - Default spdx_matcher.REMOVE_FINGERPRINT<br/>remove_sections controls the behavior of the normaliser based on what is in the | text normalised ready for comparison.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |   
 | analyse_license_text | To parse input text and identify what if any license can be detected in text input.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | license_text = non normalised raw license text                                                                                                                                                              | matches- A dict object that contans scan results<br/>percent - this is a rough calculation of percentage of text that succesful extraction occured from. It is approximate as leading and trailing content exists in may lienses such as how to use the license etc. But this is intended to let you know if a large text if there was some idea of how much was not identified. As a common practice in 3rd party licenses is to bundle many licenses in one file. The ercentage is calculated by total-length - exemplar text length as provided by spdx for each match. Noteif alicense file repeates a license only the first match is ever returned. |
+| fuzzy_license_text   | To parse input text and identify what if any license can be fuzzy detected in text input.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | license_text = non normalised raw license text, threshold for match similarity                                                                                                                              | list of dict with three attribute: id of spdx license id, type of one of "license" or "exception", score of similarity                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| similarity_score     | Calculation similarity score between two strings using jellyfish jaro similarity                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | two string you want to calculate                                                                                                                                                              | the score of two input string similarity |
+
+## Notes
 
 spdx_matcher is designed to work offline each release contains a cache updated from json from spdx source at https://github.com/spdx/license-list-data/tree/main/json the package includes the script that builds that cache build_spdx_matcher_cache used to build the cache. A copy of cache is bundled and used by default on each release.
 
@@ -47,6 +107,8 @@ You can override the cache with your locally built cache by setting environment 
 Note building the cache also runs checking against sample texts to validate matchers work. Note the spdx data is not perfect as demonstrated when you build but its quite good.
 
 This is currently in early release.
+
+## Production Example
 
 An example piece of code using the analyser below
 
@@ -236,9 +298,3 @@ print(f"{_store_content.cache_info()}")
 ```
 
 This package does contain data from SPDX which is release under the [Creative Commons Attribution 3.0](https://spdx.org/licenses/CC-BY-3.0] Unported) or CC-BY-3.0 license.
-
-
-
-
-
- 

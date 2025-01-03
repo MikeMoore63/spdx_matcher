@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import copy
 import unittest
 import logging
 import hashlib
@@ -119,6 +120,18 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(len(analysis["licenses"]), 2)
         self.assertTrue("GPL-3.0" not in analysis["licenses"])
         self.assertTrue("GPL-3.0-only" in analysis["licenses"] and "GPL-3.0-or-later" in analysis["licenses"])
+
+    def test_fuzzy_match(self):
+        # remove some text from the license text
+        test_case = copy.deepcopy(APACHE2)
+        test_case = test_case[:-300]
+
+        analysis, match = spdx_matcher.analyse_license_text(test_case)
+        self.assertEqual(len(analysis["licenses"]), 0)
+
+        result = spdx_matcher.fuzzy_license_text(test_case, threshold=0.95)
+        self.assertNotEqual(len(result), 0)
+        self.assertTrue("Apache-2.0" in [match_license["id"] for match_license in result])
 
     def test_version(self):
         self.assertTrue(spdx_matcher.__version__ is not None)

@@ -94,6 +94,7 @@ dependencies = [ # Optional
 [project.optional-dependencies] # Optional
 dev = ["check-manifest","black"]
 test = ["coverage"]
+fuzzy = ["jellyfish~=1.0"]
 
 # List URLs that are relevant to your project
 #
