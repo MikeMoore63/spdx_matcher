@@ -16,8 +16,21 @@
    limitations under the License.
 """
 
+from __future__ import annotations
+
+import json
+import math
+import os
+import re
+import time
+import urllib.request
+import logging
+from concurrent.futures import ThreadPoolExecutor, wait
+from functools import cache, wraps
+from textwrap import wrap
+from importlib.metadata import version
+
 __all__ = [
-    "__version__",
     "normalize",
     "LICENSE_HEADER_REMOVAL",
     "COPYRIGHT_REMOVAL",
@@ -26,17 +39,14 @@ __all__ = [
     "REMOVE_FINGERPRINT",
     "REMOVE_NONE",
     "analyse_license_text",
+    "similarity_score",
+    "fuzzy_license_text",
 ]
 
-import json
-import os
-import re
-import time
-import urllib.request
-import logging
-from concurrent.futures import ThreadPoolExecutor
-from functools import cache
-from textwrap import wrap
+__version__ = version("spdx_matcher")
+logger = logging.getLogger(__name__)
+
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +110,12 @@ VARIETAL_WORDS_SPELLING = {
     "non-commercial": "noncommercial",
     "per cent": "percent",
     "owner": "holder",
+}
+
+# Matcher pre- and post-configuration
+MATCHER_POST_LICENSE_REMOVE = {
+    "Python-2.0": ("0BSD", "HPND",),
+    "Python-2.0.1": ("0BSD", "HPND",),
 }
 
 # a data structure to allow template overrides if match does not happen but its important
@@ -204,12 +220,12 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     return license_text
 
 
-def _fetch_json(url: str, timeout: int | None = 10):
+def _fetch_json(url: str, timeout=10) -> dict:
     with urllib.request.urlopen(url, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _process_license(license: dict, match_cache: dict):
+def _process_license(license: dict) -> dict:
     if "detailsUrl" in license:
         json_detail_data = _fetch_json(license["detailsUrl"])
         json_detail_data.pop("licenseTextHtml", None)
@@ -268,17 +284,20 @@ def _process_license(license: dict, match_cache: dict):
         for k in json_detail_data:
             if k not in license:
                 license[k] = json_detail_data[k]
-        match_cache["licenses"][license["licenseId"]] = {
-            "name": license["name"],
-            "regexpForMatch": license["regexpForMatch"],
-            "matchCost": license["matchCost"] if "matchCost" in license else 100.0,
-            "text_length": len(license["licenseText"]),
-            "matchConfidence": license["matchConfidence"],
-            "isDeprecatedLicenseId": license["isDeprecatedLicenseId"],
+        return {
+            license["licenseId"]: {
+                "name": license["name"],
+                "licenseText": license["licenseText"],
+                "regexpForMatch": license["regexpForMatch"],
+                "matchCost": license["matchCost"] if "matchCost" in license else 100.0,
+                "text_length": len(license["licenseText"]),
+                "matchConfidence": license["matchConfidence"],
+                "isDeprecatedLicenseId": license["isDeprecatedLicenseId"],
+            }
         }
 
 
-def _process_exception(exception: dict, match_cache: dict):
+def _process_exception(exception: dict) -> dict:
     if "detailsUrl" in exception:
         json_detail_data = _fetch_json(exception["detailsUrl"])
         if "licenseExceptionTemplate" in json_detail_data:
@@ -312,15 +331,18 @@ def _process_exception(exception: dict, match_cache: dict):
         for k in json_detail_data:
             if k not in exception:
                 exception[k] = json_detail_data[k]
-        match_cache["exceptions"][exception["licenseExceptionId"]] = {
-            "name": exception["name"],
-            "regexpForMatch": exception["regexpForMatch"],
-            "matchCost": exception["matchCost"]
-            if "matchCost" in exception
-            else 100.0,
-            "text_length": len(exception["licenseExceptionText"]),
-            "matchConfidence": exception["matchConfidence"],
-            "isDeprecatedLicenseId": exception["isDeprecatedLicenseId"],
+        return {
+            exception["licenseExceptionId"]: {
+                "name": exception["name"],
+                "licenseText": exception["licenseExceptionText"],
+                "regexpForMatch": exception["regexpForMatch"],
+                "matchCost": exception["matchCost"]
+                if "matchCost" in exception
+                else 100.0,
+                "text_length": len(exception["licenseExceptionText"]),
+                "matchConfidence": exception["matchConfidence"],
+                "isDeprecatedLicenseId": exception["isDeprecatedLicenseId"],
+            }
         }
 
 
@@ -351,7 +373,7 @@ def _merge_cache_data_match_cost(cache_file: str, match_cache: dict) -> None:
             exception_data["matchCost"] = cache_data_match_cost["exceptions"][license_exception_id]
 
 
-def cache_builder(change_match_cost: bool | None = True):
+def cache_builder(change_match_cost: bool | None = True) -> None:
     """
     Builds the cache file base on spdx licenses and exceptions json files
 
@@ -367,14 +389,23 @@ def cache_builder(change_match_cost: bool | None = True):
     exceptions_data = _fetch_json(f"{base_url}/exceptions.json")
 
     # Process licenses and exceptions using ThreadPoolExecutor
+    licenses = []
+    exceptions = []
     with ThreadPoolExecutor(max_workers=DEFAULT_CACHE_THREAD_POOL_WORKERS) as executor:
         # Process licenses concurrently
         for license in licenses_data["licenses"]:
-            executor.submit(_process_license, license, match_cache)
+            licenses.append(executor.submit(_process_license, license))
 
         # Process exceptions concurrently
         for exception in exceptions_data["exceptions"]:
-            executor.submit(_process_exception, exception, match_cache)
+            exceptions.append(executor.submit(_process_exception, exception))
+
+    wait(licenses)
+    wait(exceptions)
+    for license in licenses:
+        match_cache["licenses"].update(license.result())
+    for exception in exceptions:
+        match_cache["exceptions"].update(exception.result())
 
     cache_file = os.getenv("SPDX_MATCHER_CACHE_FILE", DEFAULT_CACHE_PATH)
     if not change_match_cost:
@@ -578,7 +609,7 @@ def _license_regexps_match(regexp_to_match_input, license, fast_exit=True):
     for item_num, initial_match in enumerate(
         re.finditer(initial_regexp, normalized_all_license, flags=re.IGNORECASE)
     ):
-        logging.getLogger(__name__).debug(f"iterating regexp {item_num}")
+        logger.debug(f"iterating regexp {item_num}")
         normalized_license = normalized_all_license[initial_match.end() :]
         matches = 1
         non_matches = 0
@@ -680,20 +711,17 @@ def _load_license_analyser_cache():
     return index, match_cache
 
 
-def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=None):
+def _avoid_license_handler(license_text: str,
+                           avoid_license: list[str] | None = None,
+                           avoid_exceptions: list[str] | None = None) -> tuple[list, list]:
     """
-    This method uses regexp cache to search for license text.
-    It keeps looking until checks finished or sum o flicense text
-    and exceptions are longer than the content.
-    Starts with license then does exceptions.
+    Helper function to handle the avoid_license and avoid_exceptions arguments.
     """
-    index, match_cache = _load_license_analyser_cache()
-
     # expensive licenses
     # avoid if content considered large
     # regexp has back tracking which is inefficient
     if avoid_license is None:
-        if len(original_content) > LARGE_CONTENT:
+        if len(license_text) > LARGE_CONTENT:
             avoid_license = [
                 "0BSD",
                 "JSON",
@@ -708,6 +736,51 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
     if avoid_exceptions is None:
         avoid_exceptions = []
 
+    return avoid_license, avoid_exceptions
+
+
+def matcher_poster(func):
+    """
+    Decorator to post process the result from the matcher.
+
+    We should add some additional process for the result, to avoid noise in the result. such as:
+    - Remove some match licenses: License A is a subset of License B, we should remove License A
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        result, match = func(*args, **kwargs)
+        if "licenses" not in result:
+            return result, match
+
+        rm_licenses = set()
+        matcher_licenses = set(result["licenses"].keys())
+        for match_license_id in matcher_licenses:
+            if match_license_id in MATCHER_POST_LICENSE_REMOVE:
+                rm_curr = set(MATCHER_POST_LICENSE_REMOVE[match_license_id])
+                rm_licenses |= rm_curr & matcher_licenses
+
+        if rm_licenses:
+            logger.info("Remove match licenses: %s, according to config MATCHER_POST_LICENSE_REMOVE",
+                        rm_licenses)
+            for rm_license_id in rm_licenses:
+                result["licenses"].pop(rm_license_id)
+        return result, match
+
+    return wrapper
+
+
+@matcher_poster
+def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=None):
+    """
+    This method uses regexp cache to search for license text.
+    It keeps looking until checks finished or sum o flicense text
+    and exceptions are longer than the content.
+    Starts with license then does exceptions.
+    """
+    index, match_cache = _load_license_analyser_cache()
+    avoid_license, avoid_exceptions = _avoid_license_handler(original_content, avoid_license, avoid_exceptions)
+
     analysed_length = 0
 
     analysis = {"licenses": {}, "exceptions": {}}
@@ -716,13 +789,13 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
         if id in avoid_license:
             continue
         to_process = match_cache["licenses"][id]
-        logging.getLogger(__name__).debug(f"processing license {id}")
+        logger.debug(f"processing license {id}")
         match, license_data, full_match = _license_regexps_match(
             to_process["regexpForMatch"], original_content, fast_exit=True
         )
 
         if match == 1.0:
-            logging.getLogger(__name__).debug(f"matched license {id}")
+            logger.debug(f"matched license {id}")
             analysed_length += to_process["text_length"]
             analysis["licenses"][id] = license_data
 
@@ -734,7 +807,7 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
         if id in avoid_exceptions:
             continue
         to_process = match_cache["exceptions"][id]
-        logging.getLogger(__name__).debug(f"processing exceptions {id}")
+        logger.debug(f"processing exceptions {id}")
         match, license_data, full_match = _license_regexps_match(
             to_process["regexpForMatch"], original_content, fast_exit=True
         )
@@ -749,8 +822,102 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
     return analysis, analysed_length / len(original_content)
 
 
+def _similarity_pre_check(normalized_license: str, license_data: dict, threshold: float) -> bool:
+    """
+    Pre-check the similarity between the normalized license text and the license data using fingerprint.
+
+    :param normalized_license: Normalized license text.
+    :param license_data: License data in cache data.
+    :param threshold: Threshold value about the max number of fingerprints that can not match. The result is
+        not 100% correct, but it helps a lot for better performance.
+    """
+    if threshold < 0 or threshold > 1:
+        raise ValueError("Threshold value should be between 0 and 1")
+
+    start_find = 0
+    fp_not_match = 0
+    finger_prints = license_data["regexpForMatch"]["finger_prints"]
+    max_nomatch_finger_prints = math.ceil(len(finger_prints) * (1 - threshold))
+
+    for finger_print in finger_prints:
+        index = normalized_license.find(finger_print, start_find)
+        if index >= 0:
+            start_find = index + len(finger_print)
+        else:
+            fp_not_match += 1
+            if fp_not_match > max_nomatch_finger_prints:
+                logger.debug("Fail fingerprint check, %s not match fingerprint number is %d greater"
+                             "than max not match %d according the threshold, skip the result",
+                             license_data["name"], fp_not_match, max_nomatch_finger_prints)
+                return False
+    return True
+
+
+def similarity_score(standard: str, check: str) -> float:
+    """
+    Returns the similarity score between two strings using jellyfish jaro similarity.
+
+    :param standard: The standard license text from spdx license text.
+    :param check: The license text to check for similarity.
+    """
+    try:
+        import jellyfish
+    except ImportError:
+        raise ImportError("Dependency jellyfish is required for similarity_score, "
+                          "please install `spdx_matcher[fuzzy]`")
+
+    normalize_standard = normalize(standard, remove_sections=REMOVE_NONE)
+    return jellyfish.jaro_similarity(normalize_standard, check)
+
+
+def fuzzy_license_text(original_content: str, threshold: float, avoid_license=None, avoid_exceptions=None):
+    """
+    This method uses regexp cache and jellyfish.jaro_similarity to search for license text.
+    It first uses fingerprint to filter and make it faster, than use jellyfish.jaro_similarity to calculate
+    the similarity score between the standard license text and input license text.
+    It keeps looking for all the cache data, both license and exception.
+
+    :param original_content: License text to check for similarity.
+    :param threshold: Threshold value filter the similarity score. Only return the score if the result greater
+        than the threshold.
+    :param avoid_license: List of license id to avoid.
+    :param avoid_exceptions: List of exception id to avoid.
+    """
+    index, match_cache = _load_license_analyser_cache()
+    avoid_license, avoid_exceptions = _avoid_license_handler(original_content, avoid_license, avoid_exceptions)
+
+    result = []
+    normalized_license = normalize(original_content, remove_sections=REMOVE_NONE)
+    for license_id in index["licenses"]:
+        if license_id in avoid_license:
+            continue
+        to_process = match_cache["licenses"][license_id]
+        if not _similarity_pre_check(normalized_license, to_process, threshold):
+            continue
+        jaro_score = similarity_score(to_process["licenseText"], normalized_license)
+        if jaro_score < threshold:
+            logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                         license_id, jaro_score, threshold)
+            continue
+        result.append({"type": "license", "id": license_id, "score": jaro_score})
+
+    for license_exception_id in index["exceptions"]:
+        if license_exception_id in avoid_exceptions:
+            continue
+        to_process = match_cache["exceptions"][license_exception_id]
+        if not _similarity_pre_check(normalized_license, to_process, threshold):
+            continue
+        jaro_score = similarity_score(to_process["licenseText"], normalized_license)
+        if jaro_score < threshold:
+            logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                         license_exception_id, jaro_score, threshold)
+            continue
+        result.append({"type": "exception", "id": license_exception_id, "score": jaro_score})
+
+    result.sort(key=lambda x: x["score"], reverse=True)
+    return result
+
+
 # to help with local devugging of cache builder
 if __name__ == "__main__":
-    start = time.perf_counter()
-    cache_builder(change_match_cost=False)
-    print(f"Time taken to build cache: {time.perf_counter() - start}")
+    cache_builder(change_match_cost=True)

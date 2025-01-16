@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import copy
 import unittest
 import logging
 import hashlib
 import spdx_matcher
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 """
   Copyright 2023 Mike Moore
@@ -46,6 +48,9 @@ current_dir = Path(__file__).parent
 with open(f"{current_dir}/APACHE.txt", mode="rt", encoding="utf-8") as af:
     APACHE2 = af.read()
 
+with open(f"{current_dir}/PYTHON-2.0.1.txt", mode="rt", encoding="utf-8") as af:
+    PYTHON201 = af.read()
+
 with open(f"{current_dir}/GPL-3.0.txt", mode="rt", encoding="utf-8") as af:
     GPL30 = af.read()
 
@@ -55,13 +60,16 @@ with open(f"{current_dir}/MPL-2.0.txt", mode="rt", encoding="utf-8") as af:
 with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
     CHALLENGING = af.read()
 
+with open(f"{current_dir}/NO-MATCH.txt", mode="rt", encoding="utf-8") as af:
+    NOMATCH = af.read()
+
 
 class TestSimple(unittest.TestCase):
     def test_apache2(self):
-        logging.getLogger(__name__).debug("Starting normalize of apache2..")
+        logger.debug("Starting normalize of apache2..")
         content = spdx_matcher.normalize(APACHE2,
                                          remove_sections=spdx_matcher.REMOVE_FINGERPRINT)
-        logging.getLogger(__name__).debug("Finished normalize of apache2..")
+        logger.debug("Finished normalize of apache2..")
         if not isinstance(content, bytes):
             content = content.encode("utf-8")
 
@@ -71,6 +79,7 @@ class TestSimple(unittest.TestCase):
 
         self.assertEqual(len(analysis["licenses"]), 1)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
+
 
     def test_mpl20(self):
         # cache data matchConfidence equal to 1.0
@@ -83,16 +92,29 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(len(analysis["licenses"]), 1)
         self.assertTrue("MPL-2.0" in analysis["licenses"])
 
+    def test_post_match_python201(self):
+        logger.debug("Starting analyse of python 2.0.1..")
+        analysis, match = spdx_matcher.analyse_license_text(PYTHON201)
+        self.assertEqual(len(analysis["licenses"]), 1)
+        self.assertEqual(len(analysis["exceptions"]), 0)
+        self.assertTrue("Python-2.0.1" in analysis["licenses"])
+
+    def test_no_match(self):
+        logger.debug("Starting analyse of not match license text..")
+        analysis, match = spdx_matcher.analyse_license_text(NOMATCH)
+        self.assertEqual(len(analysis["licenses"]), 0)
+        self.assertEqual(len(analysis["exceptions"]), 0)
+
     def test_backtracking_challenging(self):
-        logging.getLogger(__name__).debug("Starting normalize of challenging..")
+        logger.debug("Starting normalize of challenging..")
         content = spdx_matcher.normalize(CHALLENGING,
                                          remove_sections=spdx_matcher.REMOVE_FINGERPRINT)
-        logging.getLogger(__name__).debug("Finished normalize of challenging..")
+        logger.debug("Finished normalize of challenging..")
         if not isinstance(content, bytes):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("4727f956620107e0fcb1451a07e3221190422c7f", file_hash)
+        self.assertEqual("1674274803cb5de9d545a6b42e7396286ee62bd5", file_hash)
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
@@ -113,10 +135,25 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-3.0" not in analysis["licenses"])
         self.assertTrue("GPL-3.0-only" in analysis["licenses"] and "GPL-3.0-or-later" in analysis["licenses"])
 
+    def test_fuzzy_match(self):
+        # remove some text from the license text
+        test_case = copy.deepcopy(APACHE2)
+        test_case = test_case[:-300]
+
+        analysis, match = spdx_matcher.analyse_license_text(test_case)
+        self.assertEqual(len(analysis["licenses"]), 0)
+
+        result = spdx_matcher.fuzzy_license_text(test_case, threshold=0.95)
+        self.assertNotEqual(len(result), 0)
+        self.assertTrue("Apache-2.0" in [match_license["id"] for match_license in result])
+
+    def test_version(self):
+        self.assertTrue(spdx_matcher.__version__ is not None)
+
 
 class TestNormalize(unittest.TestCase):
     def test_space_remove(self):
-        logging.getLogger(__name__).debug("Starting normalize test for specific symbol removal..")
+        logger.debug("Starting normalize test for specific symbol removal..")
         source = "space remove for . new start"
         expected = "space remove for. new start"
         self.assertEqual(expected, spdx_matcher.normalize(source))
