@@ -80,17 +80,16 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(len(analysis["licenses"]), 1)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
 
-
     def test_mpl20(self):
         # cache data matchConfidence equal to 1.0
-        # index, match_cache = spdx_matcher._load_license_analyser_cache()
-        # self.assertEqual(2, len([i for i in ["MPL-2.0", "MPL-2.0-no-copyleft-exception"] if i in match_cache]))
-        # self.assertTrue(match_cache["licenses"]["MPL-2.0"]["matchConfidence"] == 1.0)
-        # self.assertTrue(match_cache["licenses"]["MPL-2.0-no-copyleft-exception"]["matchConfidence"] == 1.0)
+        index, match_cache = spdx_matcher._load_license_analyser_cache()
+        self.assertTrue(match_cache["licenses"]["MPL-2.0"]["matchConfidence"] == 1.0)
+        self.assertTrue(match_cache["licenses"]["MPL-2.0-no-copyleft-exception"]["matchConfidence"] == 1.0)
 
         analysis, match = spdx_matcher.analyse_license_text(MPL20)
         self.assertEqual(len(analysis["licenses"]), 1)
-        self.assertTrue("MPL-2.0" in analysis["licenses"])
+        # it may match both MPL-2.0 or MPL-2.0-no-copyleft-exception, so check with `startswith` syntax
+        self.assertTrue(all(key.startswith("MPL-2.0") for key in analysis["licenses"].keys()))
 
     def test_post_match_python201(self):
         logger.debug("Starting analyse of python 2.0.1..")

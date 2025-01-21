@@ -61,6 +61,7 @@ URL_REGEX = (
 )
 COPYRIGHT_NOTICE_REGEX = r"((?<=\n)|.*)Copyright.*(?=\n|$)|Copyright.*\\n"
 COPYRIGHT_SYMBOLS = r"[©Ⓒⓒ]"
+ASTERISK_KEEP_REGEX = r"\s\*\s+([-=]+)"
 BULLETS_NUMBERING_REGEX = (
     r"\s(([0-9a-z]\.\s)+|(\([0-9a-z]\)\s)+|(\*\s(?![-=]))+)|(\s\([i]+\)\s)"
 )
@@ -201,8 +202,12 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     )
 
     # To avoid the possibility of a non-match due to variations of bullets, numbers, letter,
-    # or no bullets used are simply removed.
+    # or no bullets used are simply removed. Two steps to remove and
+    # Step 1: Use `ASTERISK_KEEP_REGEX` to keep only one space before [-=]+ case, make
+    #         BULLETS_NUMBERING_REGEX not remove the case `*  ------  *` for MPL license.
+    # Step 2: Use BULLETS_NUMBERING_REGEX to remove all bullets, numbers, and letters or no bullets
     # while re.search(BULLETS_NUMBERING_REGEX, license_text):
+    license_text = re.sub(ASTERISK_KEEP_REGEX, r" * \1", license_text)
     license_text = re.sub(BULLETS_NUMBERING_REGEX, " ", license_text)
 
     # To avoid the possibility of a non-match due to the same word being spelled differently.
