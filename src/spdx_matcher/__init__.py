@@ -46,10 +46,6 @@ __all__ = [
 __version__ = version("spdx_matcher")
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
-logger = logging.getLogger(__name__)
-
 DEFAULT_CACHE_PATH = os.path.join(
     os.path.abspath(os.path.dirname(__file__)), "spdxCache.json"
 )
