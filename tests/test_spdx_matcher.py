@@ -113,11 +113,11 @@ class TestSimple(unittest.TestCase):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("1674274803cb5de9d545a6b42e7396286ee62bd5", file_hash)
+        self.assertEqual("9980067309768dbcf990e9a2db73f6ecaedd907a", file_hash)
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
-        self.assertEqual(len(analysis["licenses"]), 16)
+        self.assertEqual(len(analysis["licenses"]), 18)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
         self.assertTrue("MIT" in analysis["licenses"])
         self.assertTrue("BSD-3-Clause" in analysis["licenses"])
@@ -127,6 +127,7 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-2.0-only" in analysis["licenses"])
         self.assertTrue("GPL-1.0-or-later" in analysis["licenses"])
         self.assertTrue("GPL-1.0-only" in analysis["licenses"])
+        self.assertTrue("MPL-2.0" in analysis["licenses"])
 
     def test_deprecated_licenses_not_exists(self):
         analysis, match = spdx_matcher.analyse_license_text(GPL30)

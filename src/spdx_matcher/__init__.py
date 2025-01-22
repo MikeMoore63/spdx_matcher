@@ -680,6 +680,7 @@ def _load_license_analyser_cache():
         "GPL-2.0-only",
         "GPL-1.0-or-later",
         "GPL-1.0-only",
+        "MPL-2.0",
         # dangerous?
         "AGPL-1.0-only",
         "AGPL-1.0-or-later",
