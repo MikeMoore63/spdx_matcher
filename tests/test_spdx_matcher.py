@@ -120,7 +120,7 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-3.0" not in analysis["licenses"])
         self.assertTrue("GPL-3.0-only" in analysis["licenses"] and "GPL-3.0-or-later" in analysis["licenses"])
 
-    def test_fuzzy_match(self):
+    def test_fuzzy_match_normal(self):
         # remove some text from the license text
         test_case = copy.deepcopy(APACHE2)
         test_case = test_case[:-300]
@@ -131,6 +131,23 @@ class TestSimple(unittest.TestCase):
         result = spdx_matcher.fuzzy_license_text(test_case, threshold=0.95)
         self.assertNotEqual(len(result), 0)
         self.assertTrue("Apache-2.0" in [match_license["id"] for match_license in result])
+
+    def test_fuzzy_match_matchConfidence_lt_1(self):
+        """Test fuzzy match for license data attribute matchConfidence less than 1 in cache data."""
+        _, cache_data = spdx_matcher._load_license_analyser_cache()
+
+        need = 5
+        for license_id, data in cache_data["licenses"].items():
+            if need == 0:
+                break
+            if data["matchConfidence"] < 1:
+                exact_result = spdx_matcher.analyse_license_text(data["licenseText"])
+                self.assertTrue(len(exact_result) > 0)
+
+                fuzzy_result = spdx_matcher.fuzzy_license_text(data["licenseText"], threshold=0.95)
+                self.assertTrue(len(fuzzy_result) > 0)
+                self.assertTrue(license_id in [match_license["id"] for match_license in fuzzy_result])
+                need -= 1
 
     def test_version(self):
         self.assertTrue(spdx_matcher.__version__ is not None)

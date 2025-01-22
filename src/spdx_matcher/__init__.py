@@ -880,15 +880,14 @@ def fuzzy_license_text(original_content: str, threshold: float, avoid_license=No
     :param avoid_license: List of license id to avoid.
     :param avoid_exceptions: List of exception id to avoid.
     """
-    index, match_cache = _load_license_analyser_cache()
+    _, match_cache = _load_license_analyser_cache()
     avoid_license, avoid_exceptions = _avoid_license_handler(original_content, avoid_license, avoid_exceptions)
 
     result = []
     normalized_license = normalize(original_content, remove_sections=REMOVE_NONE)
-    for license_id in index["licenses"]:
+    for license_id, to_process in match_cache["licenses"].items():
         if license_id in avoid_license:
             continue
-        to_process = match_cache["licenses"][license_id]
         if not _similarity_pre_check(normalized_license, to_process, threshold):
             continue
         jaro_score = similarity_score(to_process["licenseText"], normalized_license)
@@ -898,10 +897,9 @@ def fuzzy_license_text(original_content: str, threshold: float, avoid_license=No
             continue
         result.append({"type": "license", "id": license_id, "score": jaro_score})
 
-    for license_exception_id in index["exceptions"]:
+    for license_exception_id, to_process in match_cache["exceptions"].items():
         if license_exception_id in avoid_exceptions:
             continue
-        to_process = match_cache["exceptions"][license_exception_id]
         if not _similarity_pre_check(normalized_license, to_process, threshold):
             continue
         jaro_score = similarity_score(to_process["licenseText"], normalized_license)
