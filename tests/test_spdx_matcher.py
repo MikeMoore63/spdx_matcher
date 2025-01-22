@@ -54,6 +54,9 @@ with open(f"{current_dir}/PYTHON-2.0.1.txt", mode="rt", encoding="utf-8") as af:
 with open(f"{current_dir}/GPL-3.0.txt", mode="rt", encoding="utf-8") as af:
     GPL30 = af.read()
 
+with open(f"{current_dir}/MPL-2.0.txt", mode="rt", encoding="utf-8") as af:
+    MPL20 = af.read()
+
 with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
     CHALLENGING = af.read()
 
@@ -77,6 +80,17 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(len(analysis["licenses"]), 1)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
 
+    def test_mpl20(self):
+        # cache data matchConfidence equal to 1.0
+        index, match_cache = spdx_matcher._load_license_analyser_cache()
+        self.assertTrue(match_cache["licenses"]["MPL-2.0"]["matchConfidence"] == 1.0)
+        self.assertTrue(match_cache["licenses"]["MPL-2.0-no-copyleft-exception"]["matchConfidence"] == 1.0)
+
+        analysis, match = spdx_matcher.analyse_license_text(MPL20)
+        self.assertEqual(len(analysis["licenses"]), 1)
+        # it may match both MPL-2.0 or MPL-2.0-no-copyleft-exception, so check with `startswith` syntax
+        self.assertTrue(all(key.startswith("MPL-2.0") for key in analysis["licenses"].keys()))
+
     def test_post_match_python201(self):
         logger.debug("Starting analyse of python 2.0.1..")
         analysis, match = spdx_matcher.analyse_license_text(PYTHON201)
@@ -99,11 +113,11 @@ class TestSimple(unittest.TestCase):
             content = content.encode("utf-8")
 
         file_hash = hashlib.sha1(content).hexdigest()
-        self.assertEqual("1674274803cb5de9d545a6b42e7396286ee62bd5", file_hash)
+        self.assertEqual("9980067309768dbcf990e9a2db73f6ecaedd907a", file_hash)
 
         analysis, match = spdx_matcher.analyse_license_text(CHALLENGING)
 
-        self.assertEqual(len(analysis["licenses"]), 16)
+        self.assertEqual(len(analysis["licenses"]), 18)
         self.assertTrue("Apache-2.0" in analysis["licenses"])
         self.assertTrue("MIT" in analysis["licenses"])
         self.assertTrue("BSD-3-Clause" in analysis["licenses"])
@@ -113,6 +127,7 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-2.0-only" in analysis["licenses"])
         self.assertTrue("GPL-1.0-or-later" in analysis["licenses"])
         self.assertTrue("GPL-1.0-only" in analysis["licenses"])
+        self.assertTrue("MPL-2.0" in analysis["licenses"])
 
     def test_deprecated_licenses_not_exists(self):
         analysis, match = spdx_matcher.analyse_license_text(GPL30)
@@ -158,6 +173,28 @@ class TestNormalize(unittest.TestCase):
         logger.debug("Starting normalize test for specific symbol removal..")
         source = "space remove for . new start"
         expected = "space remove for. new start"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+    def test_bullet_should_keep(self):
+        """
+        Not all bullet points should be removed, some license like MPL use bullet points as part of the
+        license text regexp
+        """
+        # original test to make sure behavior not change
+        source = "******\n\n 6. Disclaimer of Warranty\n\n* abc *"
+        expected = "****** disclaimer of warranty abc *"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+        source = "******\n\n 6. Disclaimer of Warranty\n\n* ------ *"
+        expected = "****** disclaimer of warranty * ------ *"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+        source = "******\n\n 6. Disclaimer of Warranty\n\n* ====== *"
+        expected = "****** disclaimer of warranty * ====== *"
+        self.assertEqual(expected, spdx_matcher.normalize(source))
+
+        source = "*******\n*  *\n*  6. Disclaimer of Warranty  *\n*  ------  *"
+        expected = "******* disclaimer of warranty * ------ *"
         self.assertEqual(expected, spdx_matcher.normalize(source))
 
 

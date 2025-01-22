@@ -46,8 +46,6 @@ __all__ = [
 __version__ = version("spdx_matcher")
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 DEFAULT_CACHE_PATH = os.path.join(
     os.path.abspath(os.path.dirname(__file__)), "spdxCache.json"
 )
@@ -59,8 +57,9 @@ URL_REGEX = (
 )
 COPYRIGHT_NOTICE_REGEX = r"((?<=\n)|.*)Copyright.*(?=\n|$)|Copyright.*\\n"
 COPYRIGHT_SYMBOLS = r"[©Ⓒⓒ]"
+ASTERISK_KEEP_REGEX = r"\s\*\s+([-=]+)"
 BULLETS_NUMBERING_REGEX = (
-    r"\s(([0-9a-z]\.\s)+|(\([0-9a-z]\)\s)+|(\*\s)+)|(\s\([i]+\)\s)"
+    r"\s(([0-9a-z]\.\s)+|(\([0-9a-z]\)\s)+|(\*\s(?![-=]))+)|(\s\([i]+\)\s)"
 )
 COMMENTS_REGEX = r"(\/\/|\/\*|#) +.*"
 EXTRANEOUS_REGEX = r"(?is)\s*end of terms and conditions.*"
@@ -199,7 +198,12 @@ def normalize(license_text, remove_sections=REMOVE_FINGERPRINT):
     )
 
     # To avoid the possibility of a non-match due to variations of bullets, numbers, letter,
-    # or no bullets used are simply removed.
+    # or no bullets used are simply removed. Two steps to remove and
+    # Step 1: Use `ASTERISK_KEEP_REGEX` to keep only one space before [-=]+ case, make
+    #         BULLETS_NUMBERING_REGEX not remove the case `*  ------  *` for MPL license.
+    # Step 2: Use BULLETS_NUMBERING_REGEX to remove all bullets, numbers, and letters or no bullets
+    # while re.search(BULLETS_NUMBERING_REGEX, license_text):
+    license_text = re.sub(ASTERISK_KEEP_REGEX, r" * \1", license_text)
     license_text = re.sub(BULLETS_NUMBERING_REGEX, " ", license_text)
 
     # To avoid the possibility of a non-match due to the same word being spelled differently.
@@ -676,6 +680,7 @@ def _load_license_analyser_cache():
         "GPL-2.0-only",
         "GPL-1.0-or-later",
         "GPL-1.0-only",
+        "MPL-2.0",
         # dangerous?
         "AGPL-1.0-only",
         "AGPL-1.0-or-later",
