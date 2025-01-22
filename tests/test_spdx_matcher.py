@@ -156,8 +156,9 @@ class TestSimple(unittest.TestCase):
             if need == 0:
                 break
             if data["matchConfidence"] < 1:
-                exact_result = spdx_matcher.analyse_license_text(data["licenseText"])
-                self.assertTrue(len(exact_result) > 0)
+                # exact match without any licenses, but fuzzy match get some of the licenses
+                analysis, _ = spdx_matcher.analyse_license_text(data["licenseText"])
+                self.assertTrue(len(analysis["licenses"]) == 0)
 
                 fuzzy_result = spdx_matcher.fuzzy_license_text(data["licenseText"], threshold=0.95)
                 self.assertTrue(len(fuzzy_result) > 0)
