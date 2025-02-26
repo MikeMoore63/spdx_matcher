@@ -29,6 +29,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from functools import cache, wraps
 from textwrap import wrap
 from importlib.metadata import version
+from spdx_matcher.data_models import BaseMatcher, TextMatcher, HeaderMatcher, MatchCost
 
 __all__ = [
     "normalize",
@@ -226,61 +227,73 @@ def _fetch_json(url: str, timeout=10) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _process_license_regexp(json_detail_data: dict, matcher_config: BaseMatcher) -> dict:
+    node = {}
+    if matcher_config.template in json_detail_data:
+        node["regexpForMatch"] = _convert_template_to_regexp(
+            json_detail_data[matcher_config.template]
+        )
+
+    if matcher_config.text in json_detail_data:
+        if "regexpForMatch" in node:
+            start_time = time.time()
+            match, license_data, full_match = _license_regexps_match(
+                node["regexpForMatch"],
+                json_detail_data[matcher_config.text],
+                fast_exit=False,
+            )
+            execution_time = time.time() - start_time
+            node["matchCost"] = execution_time
+            node["matchConfidence"] = match
+            if match < 0.99 and json_detail_data["licenseId"] in TEMPLATE_OVERRIDE:
+                print(
+                    f"Unable to match {match} full_match:{full_match}  exmplar text "
+                    f"to regexp for license {json_detail_data['licenseId']}  "
+                    f"license_data {json.dumps(license_data)} time {execution_time} "
+                    f"but we have override testing override"
+                )
+                node[
+                    "regexpForMatch"
+                ] = _convert_template_to_regexp(
+                    TEMPLATE_OVERRIDE[json_detail_data["licenseId"]]
+                )
+                start_time = time.time()
+                match, license_data, full_match = _license_regexps_match(
+                    node["regexpForMatch"],
+                    json_detail_data[matcher_config.text],
+                    fast_exit=False,
+                )
+                execution_time = time.time() - start_time
+                node["matchCost"] = execution_time
+                node["matchConfidence"] = match
+
+            if match < 0.99:
+                print(
+                    f"Unable to match {match} full_match:{full_match}  exmplar "
+                    f"text to regexp for license {json_detail_data['licenseId']}  "
+                    f"license_data {json.dumps(license_data)} time {execution_time}"
+                )
+            else:
+                print(
+                    f"Success to match and full_match:{full_match} exmplar text "
+                    f"to regexp for license {json_detail_data['licenseId']} "
+                    f"license_data {json.dumps(license_data)} time {execution_time}"
+                )
+
+    if "regexpForMatch" in node:
+        node["matchCost"] = node["matchCost"] if "matchCost" in node else 100.0
+        node["text_length"] = len(json_detail_data[matcher_config.text])
+    json_detail_data[matcher_config.name] = node
+
+
 def _process_license(license: dict) -> dict:
     if "detailsUrl" in license:
         json_detail_data = _fetch_json(license["detailsUrl"])
         json_detail_data.pop("licenseTextHtml", None)
         json_detail_data.pop("standardLicenseHeaderHtml", None)
-        if "standardLicenseTemplate" in json_detail_data:
-            json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
-                json_detail_data["standardLicenseTemplate"]
-            )
 
-        if "licenseText" in json_detail_data:
-            if "regexpForMatch" in json_detail_data:
-                start_time = time.time()
-                match, license_data, full_match = _license_regexps_match(
-                    json_detail_data["regexpForMatch"],
-                    json_detail_data["licenseText"],
-                    fast_exit=False,
-                )
-                execution_time = time.time() - start_time
-                json_detail_data["matchCost"] = execution_time
-                json_detail_data["matchConfidence"] = match
-                if match < 0.99 and license["licenseId"] in TEMPLATE_OVERRIDE:
-                    print(
-                        f"Unable to match {match} full_match:{full_match}  exmplar text "
-                        f"to regexp for license {json_detail_data['licenseId']}  "
-                        f"license_data {json.dumps(license_data)} time {execution_time} "
-                        f"but we have override testing override"
-                    )
-                    json_detail_data[
-                        "regexpForMatch"
-                    ] = _convert_template_to_regexp(
-                        TEMPLATE_OVERRIDE[license["licenseId"]]
-                    )
-                    start_time = time.time()
-                    match, license_data, full_match = _license_regexps_match(
-                        json_detail_data["regexpForMatch"],
-                        json_detail_data["licenseText"],
-                        fast_exit=False,
-                    )
-                    execution_time = time.time() - start_time
-                    json_detail_data["matchCost"] = execution_time
-                    json_detail_data["matchConfidence"] = match
-
-                if match < 0.99:
-                    print(
-                        f"Unable to match {match} full_match:{full_match}  exmplar "
-                        f"text to regexp for license {json_detail_data['licenseId']}  "
-                        f"license_data {json.dumps(license_data)} time {execution_time}"
-                    )
-                else:
-                    print(
-                        f"Success to match and full_match:{full_match} exmplar text "
-                        f"to regexp for license {json_detail_data['licenseId']} "
-                        f"license_data {json.dumps(license_data)} time {execution_time}"
-                    )
+        _process_license_regexp(json_detail_data, TextMatcher())
+        _process_license_regexp(json_detail_data, HeaderMatcher())
 
         for k in json_detail_data:
             if k not in license:
@@ -288,61 +301,84 @@ def _process_license(license: dict) -> dict:
         return {
             license["licenseId"]: {
                 "name": license["name"],
-                "licenseText": license["licenseText"],
-                "regexpForMatch": license["regexpForMatch"],
-                "matchCost": license["matchCost"] if "matchCost" in license else 100.0,
-                "text_length": len(license["licenseText"]),
-                "matchConfidence": license["matchConfidence"],
-                "isDeprecatedLicenseId": license["isDeprecatedLicenseId"],
+                "metadata": {
+                    "licenseText": license["licenseText"],
+                    "standardLicenseHeader": license.get("standardLicenseHeader", None),
+                    "reference": license["reference"],
+                    "seeAlso": license.get("seeAlso", []),
+                    "isDeprecatedLicenseId": license.get("isDeprecatedLicenseId", False),
+                },
+                "header": license[HeaderMatcher.name],
+                "headerRegexpExists": True if "regexpForMatch" in license[HeaderMatcher.name] else False,
+                "text": license[TextMatcher.name],
+                "textRegexpExists": True if "regexpForMatch" in license[TextMatcher.name] else False,
             }
         }
+
+
+def _process_exception_regexp(json_detail_data: dict, matcher_config: BaseMatcher) -> dict:
+    node = {}
+
+    if matcher_config.exception_template in json_detail_data:
+        node["regexpForMatch"] = _convert_template_to_regexp(
+            json_detail_data[matcher_config.exception_template]
+        )
+
+    if matcher_config.exception_text in json_detail_data:
+        if "regexpForMatch" in node:
+            start_time = time.time()
+            match, license_data, full_match = _license_regexps_match(
+                node["regexpForMatch"],
+                json_detail_data[matcher_config.exception_text],
+                fast_exit=False,
+            )
+            execution_time = time.time() - start_time
+            node["matchCost"] = execution_time
+            node["matchConfidence"] = match
+            if match < 0.99:
+                print(
+                    f"Unable to match {match} full_match:{full_match}  exmplar text "
+                    f"to regexp for exception "
+                    f"{json_detail_data['licenseExceptionId']}  "
+                    f"license_data {json.dumps(license_data)} time {execution_time}"
+                )
+            else:
+                print(
+                    f"Success to match and full_match:{full_match} exmplar text to "
+                    f"regexp for exception {json_detail_data['licenseExceptionId']} "
+                    f"license_data {json.dumps(license_data)} time {execution_time}"
+                )
+
+    if "regexpForMatch" in node:
+        node["matchCost"] = node["matchCost"] if "matchCost" in node else 100.0
+        node["text_length"] = len(json_detail_data[matcher_config.exception_text])
+    json_detail_data[matcher_config.name] = node
 
 
 def _process_exception(exception: dict) -> dict:
     if "detailsUrl" in exception:
         json_detail_data = _fetch_json(exception["detailsUrl"])
-        if "licenseExceptionTemplate" in json_detail_data:
-            json_detail_data["regexpForMatch"] = _convert_template_to_regexp(
-                json_detail_data["licenseExceptionTemplate"]
-            )
-        if "licenseExceptionText" in json_detail_data:
-            if "regexpForMatch" in json_detail_data:
-                start_time = time.time()
-                match, license_data, full_match = _license_regexps_match(
-                    json_detail_data["regexpForMatch"],
-                    json_detail_data["licenseExceptionText"],
-                    fast_exit=False,
-                )
-                execution_time = time.time() - start_time
-                json_detail_data["matchCost"] = execution_time
-                json_detail_data["matchConfidence"] = match
-                if match < 0.99:
-                    print(
-                        f"Unable to match {match} full_match:{full_match}  exmplar text "
-                        f"to regexp for exception "
-                        f"{json_detail_data['licenseExceptionId']}  "
-                        f"license_data {json.dumps(license_data)} time {execution_time}"
-                    )
-                else:
-                    print(
-                        f"Success to match and full_match:{full_match} exmplar text to "
-                        f"regexp for exception {json_detail_data['licenseExceptionId']} "
-                        f"license_data {json.dumps(license_data)} time {execution_time}"
-                    )
+
+        _process_exception_regexp(json_detail_data, TextMatcher())
+        _process_exception_regexp(json_detail_data, HeaderMatcher())
+
         for k in json_detail_data:
             if k not in exception:
                 exception[k] = json_detail_data[k]
         return {
             exception["licenseExceptionId"]: {
                 "name": exception["name"],
-                "licenseText": exception["licenseExceptionText"],
-                "regexpForMatch": exception["regexpForMatch"],
-                "matchCost": exception["matchCost"]
-                if "matchCost" in exception
-                else 100.0,
-                "text_length": len(exception["licenseExceptionText"]),
-                "matchConfidence": exception["matchConfidence"],
-                "isDeprecatedLicenseId": exception["isDeprecatedLicenseId"],
+                "metadata": {
+                    "licenseText": exception["licenseExceptionText"],
+                    "standardLicenseHeader": exception.get("standardLicenseHeader", None),
+                    "reference": exception["reference"],
+                    "seeAlso": exception.get("seeAlso", []),
+                    "isDeprecatedLicenseId": exception.get("isDeprecatedLicenseId", False),
+                },
+                "header": exception[HeaderMatcher.name],
+                "headerRegexpExists": True if "regexpForMatch" in exception[HeaderMatcher.name] else False,
+                "text": exception[TextMatcher.name],
+                "textRegexpExists": True if "regexpForMatch" in exception[TextMatcher.name] else False,
             }
         }
 
@@ -357,21 +393,37 @@ def _merge_cache_data_match_cost(cache_file: str, match_cache: dict) -> None:
     cache_data_match_cost = {"licenses": {}, "exceptions": {}}
     with open(cache_file, "r", encoding="utf-8") as cf:
         cache_data = json.load(cf)
-        cache_data_match_cost["licenses"] = {
-            license_id: license_data["matchCost"]
-            for license_id, license_data in cache_data["licenses"].items()
-        }
-        cache_data_match_cost["exceptions"] = {
-            license_exception_id: exception_data["matchCost"]
-            for license_exception_id, exception_data in cache_data["exceptions"].items()
-        }
+        for license_id, license_data in cache_data["licenses"].items():
+            license_cost = {
+                license_id: MatchCost(
+                    text=license_data[TextMatcher.name]["matchCost"],
+                    header=license_data[HeaderMatcher.name]["matchCost"] if "matchCost" in license_data[HeaderMatcher.name] else None
+                )
+            }
+            cache_data_match_cost["licenses"].update(license_cost)
+        for license_exception_id, exception_data in cache_data["exceptions"].items():
+            exception_cost = {
+                license_exception_id: MatchCost(
+                    text=exception_data[TextMatcher.name]["matchCost"],
+                    header=exception_data[HeaderMatcher.name]["matchCost"] if "matchCost" in exception_data[HeaderMatcher.name] else None
+                )
+            }
+            cache_data_match_cost["exceptions"].update(exception_cost)
 
     for license_id, license_data in match_cache["licenses"].items():
         if license_id in cache_data_match_cost["licenses"]:
-            license_data["matchCost"] = cache_data_match_cost["licenses"][license_id]
+            license_data[TextMatcher.name]["matchCost"] = cache_data_match_cost["licenses"][license_id].text
+            header_cost = cache_data_match_cost["licenses"][license_id].header
+            if not header_cost:
+                continue
+            license_data[HeaderMatcher.name]["matchCost"] = header_cost
     for license_exception_id, exception_data in match_cache["exceptions"].items():
         if license_exception_id in cache_data_match_cost["exceptions"]:
-            exception_data["matchCost"] = cache_data_match_cost["exceptions"][license_exception_id]
+            exception_data[TextMatcher.name]["matchCost"] = cache_data_match_cost["exceptions"][license_exception_id].text
+            header_cost = cache_data_match_cost["exceptions"][license_exception_id].header
+            if not header_cost:
+                continue
+            exception_data[HeaderMatcher.name]["matchCost"] = header_cost
 
 
 def cache_builder(change_match_cost: bool | None = True) -> None:
@@ -688,26 +740,27 @@ def _load_license_analyser_cache():
         "AGPL-3.0-or-later",
     ]
 
-    licenses_to_use = [
-        {"id": k} | v
-        for k, v in match_cache["licenses"].items()
-        if v["matchConfidence"] == 1.0 and not v["isDeprecatedLicenseId"] and k not in popular_license
-    ]
-    license_to_use = [
-        license["id"]
-        for license in sorted(licenses_to_use, key=lambda x: x["matchCost"])
-    ]
+    def filter_license(match_cache_detail):
+        to_use = []
+        for license_id, data in match_cache_detail.items():
+            if data[BaseMatcher.metadata]["isDeprecatedLicenseId"]:
+                continue
+
+            if ((data[TextMatcher.regexp_exists] and data[TextMatcher.name]["matchConfidence"] == 1.0)
+                    or (data[HeaderMatcher.regexp_exists] and data[HeaderMatcher.name]["matchConfidence"] == 1.0)):
+                to_use.append({"id": license_id} | data)
+
+        return [
+            license["id"]
+            # we sort by text regexp match cost, cause not all licenses have header regexp
+            for license in sorted(to_use, key=lambda x: x[TextMatcher.name]["matchCost"])
+        ]
+
+    license_to_use = filter_license(match_cache["licenses"])
     popular_license.extend(license_to_use)
     index["licenses"] = popular_license
-    exceptions_to_use = [
-        {"id": k} | v
-        for k, v in match_cache["exceptions"].items()
-        if v["matchConfidence"] == 1.0 and not v["isDeprecatedLicenseId"]
-    ]
-    exceptions_to_use = [
-        exception["id"]
-        for exception in sorted(exceptions_to_use, key=lambda x: x["matchCost"])
-    ]
+
+    exceptions_to_use = filter_license(match_cache["exceptions"])
     index["exceptions"] = exceptions_to_use
 
     return index, match_cache
@@ -772,13 +825,27 @@ def matcher_poster(func):
     return wrapper
 
 
+def config_regexp_match(to_process: dict, original_content: str, match_config: BaseMatcher) -> tuple[dict | None, int]:
+    match, license_data, full_match = _license_regexps_match(
+        to_process[match_config.name]["regexpForMatch"], original_content, fast_exit=True
+    )
+    if match == 1.0:
+        return license_data, to_process[match_config.name]["text_length"]
+    return None, 0
+
+
 @matcher_poster
-def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=None):
+def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=None, include_header_match=True):
     """
     This method uses regexp cache to search for license text.
     It keeps looking until checks finished or sum o flicense text
     and exceptions are longer than the content.
     Starts with license then does exceptions.
+
+    :param original_content: License text to check.
+    :param avoid_license: List of license id to avoid during the match.
+    :param avoid_exceptions: List of exception id to avoid during the match.
+    :param include_header_match: Whether include header match in the result.
     """
     index, match_cache = _load_license_analyser_cache()
     avoid_license, avoid_exceptions = _avoid_license_handler(original_content, avoid_license, avoid_exceptions)
@@ -792,14 +859,23 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
             continue
         to_process = match_cache["licenses"][id]
         logger.debug(f"processing license {id}")
-        match, license_data, full_match = _license_regexps_match(
-            to_process["regexpForMatch"], original_content, fast_exit=True
-        )
 
-        if match == 1.0:
-            logger.debug(f"matched license {id}")
-            analysed_length += to_process["text_length"]
-            analysis["licenses"][id] = license_data
+        license_data = None
+        if include_header_match and to_process[HeaderMatcher.regexp_exists] \
+                and to_process[HeaderMatcher.name]["matchConfidence"] == 1.0:
+            license_data, curr_length = config_regexp_match(to_process, original_content, HeaderMatcher())
+            if license_data:
+                logger.debug(f"matched license {id}'s header")
+                analysed_length += curr_length
+                analysis["licenses"][id] = license_data
+
+        # if header is matched then no need to match text
+        if not license_data:
+            license_data, curr_length = config_regexp_match(to_process, original_content, TextMatcher())
+            if license_data:
+                logger.debug(f"matched license {id}'s text")
+                analysed_length += curr_length
+                analysis["licenses"][id] = license_data
 
         # if we have done whole text no exceptions
         if analysed_length >= len(original_content):
@@ -810,12 +886,23 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
             continue
         to_process = match_cache["exceptions"][id]
         logger.debug(f"processing exceptions {id}")
-        match, license_data, full_match = _license_regexps_match(
-            to_process["regexpForMatch"], original_content, fast_exit=True
-        )
-        if match == 1.0:
-            analysed_length += to_process["text_length"]
-            analysis["exceptions"][id] = license_data
+
+        exceptions_data = None
+        if include_header_match and to_process[HeaderMatcher.regexp_exists] \
+                and to_process[HeaderMatcher.name]["matchConfidence"] == 1.0:
+            exceptions_data, curr_length = config_regexp_match(to_process, original_content, HeaderMatcher())
+            if exceptions_data:
+                logger.debug(f"matched exception {id}'s header")
+                analysed_length += curr_length
+                analysis["exceptions"][id] = exceptions_data
+
+        # if header is matched then no need to match text
+        if not exceptions_data:
+            exceptions_data, curr_length = config_regexp_match(to_process, original_content, TextMatcher())
+            if exceptions_data:
+                logger.debug(f"matched exception {id}'s text")
+                analysed_length += curr_length
+                analysis["exceptions"][id] = exceptions_data
 
         # if done all text exit no point in testing further
         if analysed_length >= len(original_content):
@@ -824,11 +911,12 @@ def analyse_license_text(original_content, avoid_license=None, avoid_exceptions=
     return analysis, analysed_length / len(original_content)
 
 
-def _similarity_pre_check(normalized_license: str, license_data: dict, threshold: float) -> bool:
+def _similarity_pre_check(normalized_license: str, license_id: str, license_data: dict, threshold: float) -> bool:
     """
     Pre-check the similarity between the normalized license text and the license data using fingerprint.
 
     :param normalized_license: Normalized license text.
+    :param license_id: License id.
     :param license_data: License data in cache data.
     :param threshold: Threshold value about the max number of fingerprints that can not match. The result is
         not 100% correct, but it helps a lot for better performance.
@@ -850,7 +938,7 @@ def _similarity_pre_check(normalized_license: str, license_data: dict, threshold
             if fp_not_match > max_nomatch_finger_prints:
                 logger.debug("Fail fingerprint check, %s not match fingerprint number is %d greater"
                              "than max not match %d according the threshold, skip the result",
-                             license_data["name"], fp_not_match, max_nomatch_finger_prints)
+                             license_id, fp_not_match, max_nomatch_finger_prints)
                 return False
     return True
 
@@ -872,7 +960,7 @@ def similarity_score(standard: str, check: str) -> float:
     return jellyfish.jaro_similarity(normalize_standard, check)
 
 
-def fuzzy_license_text(original_content: str, threshold: float, avoid_license=None, avoid_exceptions=None):
+def fuzzy_license_text(original_content: str, threshold: float, avoid_license=None, avoid_exceptions=None, include_header_match=True):
     """
     This method uses regexp cache and jellyfish.jaro_similarity to search for license text.
     It first uses fingerprint to filter and make it faster, than use jellyfish.jaro_similarity to calculate
@@ -883,7 +971,8 @@ def fuzzy_license_text(original_content: str, threshold: float, avoid_license=No
     :param threshold: Threshold value filter the similarity score. Only return the score if the result greater
         than the threshold.
     :param avoid_license: List of license id to avoid.
-    :param avoid_exceptions: List of exception id to avoid.
+    :param avoid_exceptions: List of exception id to avoid during the match
+    :param include_header_match: Whether include header match in the result.
     """
     _, match_cache = _load_license_analyser_cache()
     avoid_license, avoid_exceptions = _avoid_license_handler(original_content, avoid_license, avoid_exceptions)
@@ -893,26 +982,50 @@ def fuzzy_license_text(original_content: str, threshold: float, avoid_license=No
     for license_id, to_process in match_cache["licenses"].items():
         if license_id in avoid_license:
             continue
-        if not _similarity_pre_check(normalized_license, to_process, threshold):
-            continue
-        jaro_score = similarity_score(to_process["licenseText"], normalized_license)
-        if jaro_score < threshold:
-            logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
-                         license_id, jaro_score, threshold)
-            continue
-        result.append({"type": "license", "id": license_id, "score": jaro_score})
+
+        header_match = False
+        if include_header_match and to_process[HeaderMatcher.regexp_exists]:
+            if _similarity_pre_check(normalized_license, license_id, to_process[HeaderMatcher.name], threshold):
+                jaro_score = similarity_score(to_process[HeaderMatcher.metadata][HeaderMatcher.text], normalized_license)
+                if jaro_score >= threshold:
+                    result.append({"type": "license", "id": license_id, "score": jaro_score})
+                    header_match = True
+                else:
+                    logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                                 license_id, jaro_score, threshold)
+
+        if not header_match:
+            if _similarity_pre_check(normalized_license, license_id, to_process[TextMatcher.name], threshold):
+                jaro_score = similarity_score(to_process[TextMatcher.metadata][TextMatcher.text], normalized_license)
+                if jaro_score >= threshold:
+                    result.append({"type": "license", "id": license_id, "score": jaro_score})
+                else:
+                    logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                                 license_id, jaro_score, threshold)
 
     for license_exception_id, to_process in match_cache["exceptions"].items():
         if license_exception_id in avoid_exceptions:
             continue
-        if not _similarity_pre_check(normalized_license, to_process, threshold):
-            continue
-        jaro_score = similarity_score(to_process["licenseText"], normalized_license)
-        if jaro_score < threshold:
-            logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
-                         license_exception_id, jaro_score, threshold)
-            continue
-        result.append({"type": "exception", "id": license_exception_id, "score": jaro_score})
+
+        header_match = False
+        if include_header_match and to_process[HeaderMatcher.regexp_exists]:
+            if _similarity_pre_check(normalized_license, license_exception_id, to_process[HeaderMatcher.name], threshold):
+                jaro_score = similarity_score(to_process[HeaderMatcher.metadata][HeaderMatcher.text], normalized_license)
+                if jaro_score >= threshold:
+                    result.append({"type": "exception", "id": license_exception_id, "score": jaro_score})
+                    header_match = True
+                else:
+                    logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                                 license_exception_id, jaro_score, threshold)
+
+        if not header_match:
+            if _similarity_pre_check(normalized_license, license_exception_id, to_process[TextMatcher.name], threshold):
+                jaro_score = similarity_score(to_process[TextMatcher.metadata][TextMatcher.text], normalized_license)
+                if jaro_score >= threshold:
+                    result.append({"type": "exception", "id": license_exception_id, "score": jaro_score})
+                else:
+                    logger.debug("%s match fail, jaro similarity score %f is lower than threshold %f",
+                                 license_exception_id, jaro_score, threshold)
 
     result.sort(key=lambda x: x["score"], reverse=True)
     return result
