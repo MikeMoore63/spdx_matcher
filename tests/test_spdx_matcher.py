@@ -7,6 +7,8 @@ import hashlib
 import spdx_matcher
 from pathlib import Path
 
+from spdx_matcher.data_models import HeaderMatcher, TextMatcher
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 """
@@ -63,6 +65,12 @@ with open(f"{current_dir}/CHALLENGING.txt", mode="rt", encoding="utf-8") as af:
 with open(f"{current_dir}/NO-MATCH.txt", mode="rt", encoding="utf-8") as af:
     NOMATCH = af.read()
 
+with open(f"{current_dir}/APACHE-HEADER.txt", mode="rt", encoding="utf-8") as af:
+    APACHE_HEADER = af.read()
+
+with open(f"{current_dir}/GPL-3.0-Interface-Exception.txt", mode="rt", encoding="utf-8") as af:
+    GPL30_EXCEPTION = af.read()
+
 
 class TestSimple(unittest.TestCase):
     def test_apache2(self):
@@ -83,8 +91,8 @@ class TestSimple(unittest.TestCase):
     def test_mpl20(self):
         # cache data matchConfidence equal to 1.0
         index, match_cache = spdx_matcher._load_license_analyser_cache()
-        self.assertTrue(match_cache["licenses"]["MPL-2.0"]["matchConfidence"] == 1.0)
-        self.assertTrue(match_cache["licenses"]["MPL-2.0-no-copyleft-exception"]["matchConfidence"] == 1.0)
+        self.assertTrue(match_cache["licenses"]["MPL-2.0"]["text"]["matchConfidence"] == 1.0)
+        self.assertTrue(match_cache["licenses"]["MPL-2.0-no-copyleft-exception"]["text"]["matchConfidence"] == 1.0)
 
         analysis, match = spdx_matcher.analyse_license_text(MPL20)
         self.assertEqual(len(analysis["licenses"]), 1)
@@ -103,6 +111,23 @@ class TestSimple(unittest.TestCase):
         analysis, match = spdx_matcher.analyse_license_text(NOMATCH)
         self.assertEqual(len(analysis["licenses"]), 0)
         self.assertEqual(len(analysis["exceptions"]), 0)
+
+    def test_exception_match(self):
+        logger.debug("Starting analyse of exception match..")
+        analysis, match = spdx_matcher.analyse_license_text(GPL30_EXCEPTION)
+        self.assertEqual(len(analysis["licenses"]), 0)
+        self.assertEqual(len(analysis["exceptions"]), 1)
+        self.assertTrue("GPL-3.0-interface-exception" in analysis["exceptions"])
+
+    def test_header_match(self):
+        logger.debug("Starting analyse of header match...")
+        analysis, match = spdx_matcher.analyse_license_text(APACHE_HEADER, include_header_match=False)
+        self.assertEqual(len(analysis["licenses"]), 0)
+        self.assertEqual(len(analysis["exceptions"]), 0)
+        analysis, match = spdx_matcher.analyse_license_text(APACHE_HEADER)
+        self.assertEqual(len(analysis["licenses"]), 1)
+        self.assertEqual(len(analysis["exceptions"]), 0)
+        self.assertTrue("Apache-2.0" in analysis["licenses"])
 
     def test_backtracking_challenging(self):
         logger.debug("Starting normalize of challenging..")
@@ -151,19 +176,21 @@ class TestSimple(unittest.TestCase):
         """Test fuzzy match for license data attribute matchConfidence less than 1 in cache data."""
         _, cache_data = spdx_matcher._load_license_analyser_cache()
 
-        need = 5
-        for license_id, data in cache_data["licenses"].items():
-            if need == 0:
-                break
-            if data["matchConfidence"] < 1:
-                # exact match without any licenses, but fuzzy match get some of the licenses
-                analysis, _ = spdx_matcher.analyse_license_text(data["licenseText"])
-                self.assertTrue(len(analysis["licenses"]) == 0)
+        for match_config in (HeaderMatcher(), TextMatcher()):
+            need = 5
+            for license_id, data in cache_data["licenses"].items():
+                if need == 0:
+                    break
+                if data[match_config.regexp_exists] and data[match_config.name]["matchConfidence"] < 1:
+                    license_text = data["metadata"][match_config.text]
+                    # exact match without any licenses, but fuzzy match get some of the licenses
+                    analysis, _ = spdx_matcher.analyse_license_text(license_text)
+                    self.assertTrue(len(analysis["licenses"]) == 0)
 
-                fuzzy_result = spdx_matcher.fuzzy_license_text(data["licenseText"], threshold=0.95)
-                self.assertTrue(len(fuzzy_result) > 0)
-                self.assertTrue(license_id in [match_license["id"] for match_license in fuzzy_result])
-                need -= 1
+                    fuzzy_result = spdx_matcher.fuzzy_license_text(license_text, threshold=0.95)
+                    self.assertTrue(len(fuzzy_result) > 0)
+                    self.assertTrue(license_id in [match_license["id"] for match_license in fuzzy_result])
+                    need -= 1
 
     def test_version(self):
         self.assertTrue(spdx_matcher.__version__ is not None)
