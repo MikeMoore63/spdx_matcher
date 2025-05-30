@@ -160,6 +160,11 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-3.0" not in analysis["licenses"])
         self.assertTrue("GPL-3.0-only" in analysis["licenses"] and "GPL-3.0-or-later" in analysis["licenses"])
 
+        fuzzy_result = spdx_matcher.fuzzy_license_text(GPL30, threshold=0.95)
+        fuzzy_matched_licenses_ids = [match_license["id"] for match_license in fuzzy_result]
+        self.assertTrue("GPL-3.0" not in fuzzy_matched_licenses_ids)
+        self.assertTrue("GPL-3.0+" not in fuzzy_matched_licenses_ids)
+
     def test_fuzzy_match_normal(self):
         # remove some text from the license text
         test_case = copy.deepcopy(APACHE2)
@@ -182,7 +187,7 @@ class TestSimple(unittest.TestCase):
                 if need == 0:
                     break
                 if data[match_config.regexp_exists] and data[match_config.name]["matchConfidence"] < 1:
-                    license_text = data["metadata"][match_config.text]
+                    license_text = data[TextMatcher.metadata][match_config.text]
                     # exact match without any licenses, but fuzzy match get some of the licenses
                     analysis, _ = spdx_matcher.analyse_license_text(license_text)
                     self.assertTrue(len(analysis["licenses"]) == 0)

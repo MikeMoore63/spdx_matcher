@@ -980,7 +980,7 @@ def fuzzy_license_text(original_content: str, threshold: float, avoid_license=No
     result = []
     normalized_license = normalize(original_content, remove_sections=REMOVE_NONE)
     for license_id, to_process in match_cache["licenses"].items():
-        if license_id in avoid_license:
+        if license_id in avoid_license or to_process[TextMatcher.metadata]["isDeprecatedLicenseId"]:
             continue
 
         header_match = False
