@@ -65,7 +65,8 @@ import spdx_matcher
 with open("LICENSE.txt") as myf:
     license_text = myf.read()
 
-fuzzy_result = spdx_matcher.fuzzy_license_text(license_text)
+threshold = 0.8
+fuzzy_result = spdx_matcher.fuzzy_license_text(license_text, threshold)
 ```
 
 The result of fuzzy match is different from exact match. The result is a list of dictionary, each dictionary
