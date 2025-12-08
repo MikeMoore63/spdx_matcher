@@ -71,6 +71,9 @@ with open(f"{current_dir}/APACHE-HEADER.txt", mode="rt", encoding="utf-8") as af
 with open(f"{current_dir}/GPL-3.0-Interface-Exception.txt", mode="rt", encoding="utf-8") as af:
     GPL30_EXCEPTION = af.read()
 
+with open(f"{current_dir}/NPCAP.txt", mode="rt", encoding="utf-8") as af:
+    NPCAP = af.read()
+
 
 class TestSimple(unittest.TestCase):
     def test_apache2(self):
@@ -160,6 +163,11 @@ class TestSimple(unittest.TestCase):
         self.assertTrue("GPL-3.0" not in analysis["licenses"])
         self.assertTrue("GPL-3.0-only" in analysis["licenses"] and "GPL-3.0-or-later" in analysis["licenses"])
 
+        fuzzy_result = spdx_matcher.fuzzy_license_text(GPL30, threshold=0.95)
+        fuzzy_matched_licenses_ids = [match_license["id"] for match_license in fuzzy_result]
+        self.assertTrue("GPL-3.0" not in fuzzy_matched_licenses_ids)
+        self.assertTrue("GPL-3.0+" not in fuzzy_matched_licenses_ids)
+
     def test_fuzzy_match_normal(self):
         # remove some text from the license text
         test_case = copy.deepcopy(APACHE2)
@@ -182,7 +190,7 @@ class TestSimple(unittest.TestCase):
                 if need == 0:
                     break
                 if data[match_config.regexp_exists] and data[match_config.name]["matchConfidence"] < 1:
-                    license_text = data["metadata"][match_config.text]
+                    license_text = data[TextMatcher.metadata][match_config.text]
                     # exact match without any licenses, but fuzzy match get some of the licenses
                     analysis, _ = spdx_matcher.analyse_license_text(license_text)
                     self.assertTrue(len(analysis["licenses"]) == 0)
@@ -191,6 +199,12 @@ class TestSimple(unittest.TestCase):
                     self.assertTrue(len(fuzzy_result) > 0)
                     self.assertTrue(license_id in [match_license["id"] for match_license in fuzzy_result])
                     need -= 1
+
+    def test_fuzzy_match_edge_case(self):
+        """Test fuzzy match for some edge cases."""
+        # npcap is commercial license with some parts copied from other licenses
+        result = spdx_matcher.fuzzy_license_text(NPCAP, threshold=0.8)
+        self.assertEqual(0, len(result))
 
     def test_version(self):
         self.assertTrue(spdx_matcher.__version__ is not None)
