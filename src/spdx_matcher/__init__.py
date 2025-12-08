@@ -927,7 +927,8 @@ def _similarity_pre_check(normalized_license: str, license_id: str, license_data
     start_find = 0
     fp_not_match = 0
     finger_prints = license_data["regexpForMatch"]["finger_prints"]
-    max_nomatch_finger_prints = math.ceil(len(finger_prints) * (1 - threshold))
+    # when there is only one fingerprint, we require it must match to avoid false positive for :func:`similarity_score`
+    max_nomatch_finger_prints = math.ceil(len(finger_prints) * (1 - threshold)) if len(finger_prints) > 1 else 0
 
     for finger_print in finger_prints:
         index = normalized_license.find(finger_print, start_find)
